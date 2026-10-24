@@ -18,7 +18,12 @@ user-invocable: false
 ## Templates / htmx
 - Templates live in `templates/*.html`, embedded with `go:embed`, parsed once into `tmpl`. Use `html/template` only, never `text/template`, so output is auto-escaped. The web adapter keeps its own `internal/adapters/web/templates/*.html` with its own embedded `tmpl`/`render`; the same `html/template` and buffered-render rules apply there.
 - Full page is the `index` template. htmx endpoints return **fragments** (`greeting`, `time`), not full pages.
-- htmx is loaded from jsDelivr, pinned to an exact version with an SRI `integrity` hash. Change version and hash together, via the `bump-htmx` skill. Never use an unpinned tag.
+- htmx is vendored (`internal/adapters/sim/static/vendor/htmx/`), loaded same-origin from `/static/sim/vendor/htmx/htmx.min.js`. Update it via the `bump-vendor` skill. Never add a CDN script; the CSP is `script-src 'self'`.
+
+## Simulator front end (`internal/adapters/sim/static/`)
+- No bundler, no npm dependencies, no inline `<script>` (CSP). ES modules import by relative path or absolute `/static/sim/...` path; `imports.test.mjs` checks every specifier resolves.
+- New concept = (1) a pure `trace(input) -> steps[]` built with `createRecorder` (no DOM, no three.js), (2) a renderer exporting `createRenderer()` with `init/apply/reverse(step, prev)/update(dt)/dispose`, (3) a registry entry in `static/registry.js`, (4) tests in `internal/adapters/sim/test/` that reuse the replay/reverse property checks. Flip the registry `status` to `available` last.
+- Build DOM with `createElement`/`textContent`, never `innerHTML` with interpolated data.
 
 ## Tests
 - Table test in `main_test.go` drives `routes(mounts...)` through `httptest`. Add a row for each new route, including the 405/404 cases a method pattern gives for free.

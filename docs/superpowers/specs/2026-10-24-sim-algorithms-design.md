@@ -29,7 +29,9 @@ software first, later security, ops, infra). This spec covers only:
 - Step-through player: play, pause, step, step back, speed. Traces are computed
   once up front, deterministic.
 - Embed level: any page drops in a concept with one tag
-  `<sim-player concept="quick">`.
+  `<sim-player concept="quick-sort">`.
+- Merge sort emits only `set` steps (no `compare`); its reads come from copied
+  buffers, so index highlights would mislead.
 - Master index is a live page driven by one registry; it cannot drift from
   what exists.
 - three.js and htmx are both **vendored** (committed, embedded in the binary),
@@ -39,7 +41,7 @@ software first, later security, ops, infra). This spec covers only:
 
 ```
 internal/adapters/web/            Go: serve /sim routes and static assets (embed.FS)
-web/sim/                          embedded static files, no build step
+internal/adapters/sim/static/      embedded static files, no build step
   index.html                      /sim catalog page
   concept.html                    /sim/{topic}/{id} page: thin shell around <sim-player>
   registry.js                     data: topics, concepts, status, module paths
@@ -55,6 +57,8 @@ web/sim/                          embedded static files, no build step
     htmx/                         pinned htmx.min.js + VERSION file
 ```
 
+Files live under the adapter because `go:embed` cannot reach outside its package; they are served at `/static/sim/...`.
+
 Exact home of the Go side (new file in the `web` adapter vs a new small
 adapter) is a plan-time decision; it must follow the existing hexagonal layout
 and `routes(mounts...)` mounting, and contain no domain logic (there is none).
@@ -65,8 +69,10 @@ and `routes(mounts...)` mounting, and contain no domain logic (there is none).
   Step is `{type, ...}` with `type` in `compare | swap | set | mark`; fields
   per type are defined in one place (`engine/steps.js`) so renderers and
   tests share them.
-- **Renderer**: `{init(scene, input), apply(step), reverse(step), dispose()}`.
-  `reverse` gives rewind without replay from the start. Renderers draw only;
+- **Renderer**: `{init(scene, input), apply(step), reverse(step, prev), update(dt), dispose()}`.
+  `reverse` gives rewind without replay from the start. `prev` is the step
+  before the one being undone (or null), so the previous highlight is
+  restored; `update(dt)` runs per frame for easing. Renderers draw only;
   speed and cursor belong to the player.
 - **Registry entry**: `{id, topic, title, status, trace, renderer}`.
   `status` is `available | planned`. A `planned` entry has no module paths.
@@ -75,7 +81,7 @@ and `routes(mounts...)` mounting, and contain no domain logic (there is none).
 - **`<sim-player>`**: attributes `concept` (registry id, required) and `input`
   (JSON, optional pre-set data). It dynamic-imports the concept's modules, so a
   host page needs only one `<script type="module" src="/static/sim/engine/sim-player.js">`.
-  All files under `web/sim/` are served at `/static/sim/...`.
+  All files under `internal/adapters/sim/static/` are served at `/static/sim/...`.
 
 ### Module loading and CSP
 
@@ -92,10 +98,7 @@ is dropped from `script-src` (now `'self'`). WebGL needs no extra CSP.
 - `templates/index.html` loads htmx from `/static/sim/vendor/htmx/htmx.min.js`
   instead of jsDelivr; `integrity`/`crossorigin` removed (same-origin).
 - `main.go` `securityHeaders` CSP and its doc comment updated.
-- `bump-htmx` skill rewritten for vendoring: download the pinned release,
-  verify the version string, verify it against the published SRI hash from the
-  release notes, write it into `vendor/htmx/` and update `VERSION`. Add a
-  matching `bump-three` skill or extend one `bump-vendor` skill (plan-time).
+- One `bump-vendor <htmx|three> <version>` skill; integrity is checked against npm `dist.integrity`.
 - `CLAUDE.md` and `project-conventions` updated: replace "loaded from jsDelivr
   with SRI" with the vendored rule. Versions chosen must be at least two weeks
   old, same as today.
@@ -105,9 +108,9 @@ is dropped from `script-src` (now `'self'`). WebGL needs no extra CSP.
 
 ## Data flow
 
-1. Browser loads `/sim` (catalog) or `/sim/algorithms/quick`; Go serves static
+1. Browser loads `/sim` (catalog) or `/sim/algorithms/quick-sort`; Go serves static
    HTML from `embed.FS`.
-2. `<sim-player concept="quick">` reads `registry.js`, imports the concept's
+2. `<sim-player concept="quick-sort">` reads `registry.js`, imports the concept's
    trace and renderer.
 3. Input (default random array, size slider, reshuffle) goes to `trace(input)`,
    producing `steps[]` once.
@@ -133,7 +136,7 @@ is dropped from `script-src` (now `'self'`). WebGL needs no extra CSP.
   over all four algorithms with random and edge inputs (empty, one element,
   duplicates, already sorted, reversed).
 - **Go** (`httptest`, same style as `main_test.go`): `/sim` and
-  `/sim/algorithms/quick` return 200 HTML; vendored and engine assets return
+  `/sim/algorithms/quick-sort` return 200 HTML; vendored and engine assets return
   the right content type; unknown path 404; wrong method 405; CSP no longer
   mentions jsDelivr; `/` page references the vendored htmx path.
 - **Registry sanity** (Node test): ids unique; every `available` entry's

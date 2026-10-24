@@ -41,16 +41,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	// Bound boot-time DB work so an unreachable database cannot hang startup.
+	bootCtx, cancelBoot := context.WithTimeout(ctx, 10*time.Second)
+	pool, err := pgxpool.New(bootCtx, cfg.DatabaseURL)
 	if err != nil {
+		cancelBoot()
 		log.Error("database", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
-	if err := postgres.Migrate(ctx, pool); err != nil {
+	if err := postgres.Migrate(bootCtx, pool); err != nil {
+		cancelBoot()
 		log.Error("migrate", "err", err)
 		os.Exit(1)
 	}
+	cancelBoot()
 
 	auth := &identity.Service{
 		Users:    postgres.NewUserRepo(pool),
@@ -74,7 +79,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           logging(log, securityHeaders(routes(ui.Mount))),
+		Handler:           buildHandler(log, ui.Mount),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -98,6 +103,11 @@ func main() {
 		log.Error("shutdown failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+// buildHandler is the full production chain: logging, security headers, routes.
+func buildHandler(log *slog.Logger, mounts ...func(*http.ServeMux)) http.Handler {
+	return logging(log, securityHeaders(routes(mounts...)))
 }
 
 // routes builds the mux. Mounts let adapters register their own routes; with

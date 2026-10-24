@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"babylon/internal/adapters/web"
+	"babylon/internal/identity/identitytest"
 )
 
 func TestRoutes(t *testing.T) {
@@ -91,6 +94,35 @@ func TestSecurityHeaders(t *testing.T) {
 			if got := rec.Header().Get(k); got != v {
 				t.Errorf("GET %s: %s = %q, want %q", path, k, got, v)
 			}
+		}
+	}
+}
+
+func TestBuildHandlerFullChain(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	env := identitytest.NewEnv()
+	ui := &web.Handler{Auth: env.Service, Tokens: env.Tokens, Log: log}
+	h := buildHandler(log, ui.Mount) // panics on a route clash between demo and auth routes
+
+	tests := []struct {
+		path, location string
+		status         int
+	}{
+		{"/healthz", "", 200},
+		{"/me", "/auth/login", 302},
+		{"/auth/login", "", 302},
+	}
+	for _, tc := range tests {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
+		if rec.Code != tc.status {
+			t.Errorf("GET %s: status = %d, want %d", tc.path, rec.Code, tc.status)
+		}
+		if tc.location != "" && rec.Header().Get("Location") != tc.location {
+			t.Errorf("GET %s: Location = %q, want %q", tc.path, rec.Header().Get("Location"), tc.location)
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Content-Security-Policy") == "" {
+			t.Errorf("GET %s: security headers missing: %v", tc.path, rec.Header())
 		}
 	}
 }

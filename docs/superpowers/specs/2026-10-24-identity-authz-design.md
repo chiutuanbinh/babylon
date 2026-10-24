@@ -43,7 +43,7 @@ internal/
 ```
 
 Existing handlers and templates in `main.go` are not moved. The `web` adapter
-registers its routes on the same mux; `routes(app)` remains the test seam.
+registers its routes on the same mux via `routes(mounts ...func(*http.ServeMux))`, which remains the test seam.
 
 ## Identity
 
@@ -74,11 +74,12 @@ sessions(token_hash TEXT PK, user_id BIGINT NOT NULL REFERENCES users,
 
 ### Middleware
 
-- `loadUser` runs on all routes, reads the cookie, looks up a non-expired
-  session, puts the user in the request context.
-- `requireUser` wraps protected routes. Normal requests redirect to
-  `/auth/login`; htmx requests get `HX-Redirect` so a login page is never
-  swapped into a fragment.
+- `requireUser` wraps protected routes: it reads the cookie, looks up a
+  non-expired session and puts the user in the request context. Not-logged-in
+  requests redirect to `/auth/login` (htmx requests get `HX-Redirect` so a
+  login page is never swapped into a fragment). An infrastructure error is a
+  500, not a login redirect. A separate `loadUser` for all routes was dropped:
+  nothing but `requireUser` consumes the user yet.
 
 ## Authorization
 

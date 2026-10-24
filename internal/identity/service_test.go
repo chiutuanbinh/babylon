@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"babylon/internal/identity"
 	"babylon/internal/identity/identitytest"
@@ -151,6 +152,60 @@ func TestLoginProviderFailureCreatesNothing(t *testing.T) {
 	}
 	if env.Sessions.Len() != 0 {
 		t.Fatalf("session created despite failed login: %d", env.Sessions.Len())
+	}
+}
+
+func TestLoginProviderFailureIsErrProvider(t *testing.T) {
+	env := identitytest.NewEnv()
+	_, err := env.Service.LoginWithGitHub(ctx, "bogus")
+	if !errors.Is(err, identity.ErrProvider) {
+		t.Fatalf("err = %v, want ErrProvider", err)
+	}
+}
+
+type failingSessions struct{ *identitytest.Sessions }
+
+func (failingSessions) Create(context.Context, identity.Session) error { return errors.New("db down") }
+
+func TestLoginInternalFailureIsNotErrProvider(t *testing.T) {
+	env := identitytest.NewEnv()
+	env.Service.Sessions = failingSessions{env.Sessions}
+	_, err := env.Service.LoginWithGitHub(ctx, "code-alice")
+	if err == nil || errors.Is(err, identity.ErrProvider) {
+		t.Fatalf("err = %v, want non-provider error", err)
+	}
+}
+
+func TestAuthenticateOrphanedSession(t *testing.T) {
+	env := identitytest.NewEnv()
+	if err := env.Sessions.Create(ctx, identity.Session{
+		TokenHash: identity.HashToken("ghost"),
+		UserID:    999,
+		ExpiresAt: env.Clock.T.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Service.Authenticate(ctx, "ghost"); !errors.Is(err, identity.ErrUnauthenticated) {
+		t.Fatalf("err = %v, want ErrUnauthenticated for session whose user is gone", err)
+	}
+}
+
+func TestLogoutEmptyTokenIsNoop(t *testing.T) {
+	env := identitytest.NewEnv()
+	if err := env.Service.Logout(ctx, ""); err != nil {
+		t.Fatalf("Logout(\"\") = %v, want nil", err)
+	}
+}
+
+func TestSessionValidOneTickBeforeExpiry(t *testing.T) {
+	env := identitytest.NewEnv()
+	res, err := env.Service.LoginWithGitHub(ctx, "code-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.Clock.T = env.Clock.T.Add(identitytest.SessionTTL - time.Second)
+	if _, err := env.Service.Authenticate(ctx, res.Token); err != nil {
+		t.Fatalf("err = %v, want session still valid 1s before expiry", err)
 	}
 }
 

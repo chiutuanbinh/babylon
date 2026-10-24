@@ -33,7 +33,7 @@ func (s *Service) LoginURL(state string) string {
 func (s *Service) LoginWithGitHub(ctx context.Context, code string) (LoginResult, error) {
 	profile, err := s.Provider.Exchange(ctx, code)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("exchange code: %w", err)
+		return LoginResult{}, fmt.Errorf("%w: exchange code: %v", ErrProvider, err)
 	}
 	now := s.Clock.Now()
 	user, err := s.Users.UpsertByGitHubID(ctx, User{

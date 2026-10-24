@@ -32,6 +32,19 @@ type Handler struct {
 	SecureCookies bool
 }
 
+// log returns the configured logger, or the default one when none was set.
+func (h *Handler) log() *slog.Logger {
+	if h.Log != nil {
+		return h.Log
+	}
+	return slog.Default()
+}
+
+// noStore keeps per-user and auth responses out of browser and proxy caches.
+func noStore(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+}
+
 // Mount registers the identity routes on mux.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", h.login)
@@ -41,9 +54,10 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	state, err := h.Tokens.New()
 	if err != nil {
-		h.Log.Error("new state", "err", err)
+		h.log().Error("new state", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -52,6 +66,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	got := r.URL.Query().Get("state")
 	c, err := r.Cookie(stateCookie)
 	if err != nil || got == "" || subtle.ConstantTimeCompare([]byte(c.Value), []byte(got)) != 1 {
@@ -67,18 +82,27 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.Auth.LoginWithGitHub(r.Context(), code)
 	if err != nil {
-		h.Log.Error("login failed", "err", err)
-		http.Error(w, "login failed", http.StatusBadGateway)
+		h.log().Error("login failed", "err", err)
+		status := http.StatusInternalServerError
+		if errors.Is(err, identity.ErrProvider) {
+			status = http.StatusBadGateway
+		}
+		http.Error(w, "login failed", status)
 		return
 	}
 	h.setCookie(w, &http.Cookie{Name: sessionCookie, Value: res.Token, Path: "/", Expires: res.ExpiresAt})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+// logout fails closed: if the session cannot be revoked the cookie is kept and
+// the user gets a 500, so they can retry rather than believe they are signed out.
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		if err := h.Auth.Logout(r.Context(), c.Value); err != nil {
-			h.Log.Error("logout", "err", err)
+			h.log().Error("logout", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
 		}
 	}
 	h.setCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1})
@@ -86,8 +110,9 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	u, _ := UserFrom(r.Context())
-	render(w, "me", u)
+	h.render(w, "me", u)
 }
 
 type userKey struct{}
@@ -104,6 +129,7 @@ func UserFrom(ctx context.Context) (identity.User, bool) {
 // infrastructure error is a 500, not a login bounce.
 func (h *Handler) requireUser(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		noStore(w)
 		u, err := h.currentUser(r)
 		switch {
 		case errors.Is(err, identity.ErrUnauthenticated):
@@ -115,7 +141,7 @@ func (h *Handler) requireUser(next http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/auth/login", http.StatusFound)
 			return
 		case err != nil:
-			h.Log.Error("authenticate", "err", err)
+			h.log().Error("authenticate", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -140,9 +166,10 @@ func (h *Handler) setCookie(w http.ResponseWriter, c *http.Cookie) {
 }
 
 // render executes into a buffer first so a template error is a clean 500.
-func render(w http.ResponseWriter, name string, data any) {
+func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		h.log().Error("render", "template", name, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

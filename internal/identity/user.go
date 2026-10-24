@@ -10,6 +10,9 @@ import (
 var (
 	ErrNotFound        = errors.New("identity: not found")
 	ErrUnauthenticated = errors.New("identity: unauthenticated")
+	// ErrProvider marks a failure of the external identity provider (bad code,
+	// network, GitHub down) as opposed to an internal failure.
+	ErrProvider = errors.New("identity: provider failure")
 )
 
 type Role string

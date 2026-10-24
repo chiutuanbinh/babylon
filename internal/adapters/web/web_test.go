@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"babylon/internal/adapters/web"
 	"babylon/internal/identity"
@@ -91,6 +92,9 @@ func TestLoginRedirectsToProviderWithStateCookie(t *testing.T) {
 	c := findCookie(t, rec.Result().Cookies(), "oauth_state")
 	if c.Value != loc.Query().Get("state") || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Secure {
 		t.Fatalf("state cookie = %+v", c)
+	}
+	if c.Path != "/auth" || c.MaxAge != 600 {
+		t.Fatalf("state cookie Path=%q MaxAge=%d, want /auth and 600", c.Path, c.MaxAge)
 	}
 }
 
@@ -226,6 +230,66 @@ func TestCallbackRejectsBadState(t *testing.T) {
 	}
 }
 
+func TestCallbackSuccessCookies(t *testing.T) {
+	h, env := newServer(t, false)
+	state, stateCookie := startLogin(t, h)
+	req := httptest.NewRequest("GET", "/auth/callback?code=code-alice&state="+url.QueryEscape(state), nil)
+	req.AddCookie(stateCookie)
+	rec := do(h, req)
+	cookies := rec.Result().Cookies()
+
+	session := findCookie(t, cookies, "session")
+	if session.Path != "/" || !session.HttpOnly || session.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("session cookie = %+v", session)
+	}
+	want := env.Clock.T.Add(identitytest.SessionTTL)
+	if d := session.Expires.Sub(want); d < -time.Second || d > time.Second {
+		t.Fatalf("session Expires = %v, want %v", session.Expires, want)
+	}
+	cleared := findCookie(t, cookies, "oauth_state")
+	if cleared.MaxAge >= 0 || cleared.Path != "/auth" {
+		t.Fatalf("state cookie not cleared: %+v", cleared)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("callback Cache-Control = %q", got)
+	}
+}
+
+func TestCallbackSessionCreateFailureIs500(t *testing.T) {
+	h, env := newServer(t, false)
+	env.Service.Sessions = brokenSessions{}
+	state, stateCookie := startLogin(t, h)
+	req := httptest.NewRequest("GET", "/auth/callback?code=code-alice&state="+url.QueryEscape(state), nil)
+	req.AddCookie(stateCookie)
+	rec := do(h, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (internal failure, not provider)", rec.Code)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session" {
+			t.Fatalf("session cookie set despite failure: %+v", c)
+		}
+	}
+}
+
+func TestNoStoreOnAuthAndPerUserResponses(t *testing.T) {
+	h, _ := newServer(t, false)
+	session := login(t, h, "code-alice")
+	check := func(name string, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s: Cache-Control = %q, want no-store", name, got)
+		}
+	}
+	check("/me 200", getMe(h, session))
+	check("/me 302", getMe(h, nil))
+	check("/auth/login", do(h, httptest.NewRequest("GET", "/auth/login", nil)))
+	check("/auth/callback (bad state)", do(h, httptest.NewRequest("GET", "/auth/callback?state=x", nil)))
+	req := httptest.NewRequest("POST", "/auth/logout", nil)
+	req.AddCookie(session)
+	check("/auth/logout", do(h, req))
+}
+
 func TestCallbackProviderFailureIs502(t *testing.T) {
 	h, env := newServer(t, false)
 	state, stateCookie := startLogin(t, h)
@@ -260,12 +324,31 @@ func TestLogout(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
 		t.Fatalf("logout = %d -> %q, want 303 -> /", rec.Code, rec.Header().Get("Location"))
 	}
-	if c := findCookie(t, rec.Result().Cookies(), "session"); c.MaxAge >= 0 {
-		t.Fatalf("session cookie not cleared: %+v", c)
+	c := findCookie(t, rec.Result().Cookies(), "session")
+	if c.MaxAge >= 0 || c.Path != "/" || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("session cookie not properly cleared: %+v", c)
 	}
 	// The old cookie is dead server-side too, not just cleared in the browser.
 	if rec := getMe(h, session); rec.Code != http.StatusFound {
 		t.Fatalf("old session still works after logout: %d", rec.Code)
+	}
+}
+
+// If the server cannot revoke the session it must say so and keep the cookie,
+// so the user can retry instead of believing they are logged out.
+func TestLogoutFailsClosed(t *testing.T) {
+	h, env := newServer(t, false)
+	env.Service.Sessions = brokenSessions{}
+	req := httptest.NewRequest("POST", "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: "tok"})
+	rec := do(h, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session" {
+			t.Fatalf("session cookie touched on failed logout: %+v", c)
+		}
 	}
 }
 
@@ -282,5 +365,8 @@ func TestMeEscapesLogin(t *testing.T) {
 	rec := getMe(h, login(t, h, "code-xss"))
 	if strings.Contains(rec.Body.String(), "<script>") {
 		t.Fatalf("login not escaped: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "&lt;script&gt;") {
+		t.Fatalf("escaped login missing from body: %s", rec.Body.String())
 	}
 }

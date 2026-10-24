@@ -1,5 +1,7 @@
 # Identity and Authorization Implementation Plan
 
+> **Superseded in part (2026-10-24):** after security review, admin is decided by immutable numeric GitHub ID (`ADMIN_GITHUB_IDS`), not by login (`ADMIN_LOGINS`), and `loadConfig` rejects plain-http `BASE_URL` off loopback. Where this plan says `ADMIN_LOGINS` or login-based `RoleFor`, the spec and code are authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add GitHub SSO login with self-signup, Postgres-backed users and sessions, and a Casbin ABAC authorizer (owner or admin), structured as DDD + hexagonal.

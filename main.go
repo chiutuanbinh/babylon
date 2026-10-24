@@ -19,6 +19,7 @@ import (
 
 	"babylon/internal/adapters/github"
 	"babylon/internal/adapters/postgres"
+	"babylon/internal/adapters/sim"
 	"babylon/internal/adapters/system"
 	"babylon/internal/adapters/web"
 	"babylon/internal/identity"
@@ -77,9 +78,15 @@ func main() {
 		SecureCookies: cfg.secureCookies(),
 	}
 
+	simUI, err := sim.New()
+	if err != nil {
+		log.Error("sim assets", "err", err)
+		os.Exit(1)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           buildHandler(log, ui.Mount),
+		Handler:           buildHandler(log, ui.Mount, simUI.Mount),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

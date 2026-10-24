@@ -1,0 +1,21 @@
+#!/bin/sh
+# Format and lint gate. Enable once per clone: git config core.hooksPath .githooks
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+[ -z "$staged" ] && exit 0
+
+# Check formatting of the staged content, not the working tree.
+unformatted=""
+for f in $staged; do
+  if [ -n "$(git show ":$f" | gofmt -l)" ]; then
+    unformatted="$unformatted $f"
+  fi
+done
+if [ -n "$unformatted" ]; then
+  echo "pre-commit: gofmt needed on:$unformatted" >&2
+  echo "fix: gofmt -w$unformatted && git add$unformatted" >&2
+  exit 1
+fi
+
+go vet ./...

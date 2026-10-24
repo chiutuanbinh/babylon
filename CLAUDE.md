@@ -39,7 +39,9 @@ BASE_URL=http://localhost:8080                                # callback is BASE
 ADMIN_GITHUB_IDS=12345,67890   # optional; GitHub numeric user IDs that become admins (find yours at https://api.github.com/users/<login>)
 ```
 
-Local Postgres: `container run -d --name pg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=babylon -p 5432:5432 postgres:17`. Postgres integration tests run only when `TEST_DATABASE_URL` is set; otherwise they skip.
+Local Postgres: `container run -d --name pg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=babylon -p 5432:5432 postgres:17`. Postgres integration tests run only when `TEST_DATABASE_URL` is set; otherwise they skip. Create a dedicated test DB once with `container exec pg createdb -U postgres babylon_test`, then run `TEST_DATABASE_URL=postgres://postgres:pg@localhost:5432/babylon_test go test ./internal/adapters/postgres/ -v`. The tests TRUNCATE tables, so they refuse (fail) any database whose name does not end in `_test`.
+
+`BASE_URL` may use `http` only for `localhost` or `127.0.0.1` (cookies are Secure otherwise); anything else must be `https`. `ADMIN_LOGINS` is no longer supported and makes boot fail; use `ADMIN_GITHUB_IDS`.
 
 ## Architecture
 
@@ -65,4 +67,4 @@ htmx is not vendored. `templates/index.html` loads a pinned version from jsDeliv
 
 - The Bash tool's sandbox blocks connections to `localhost` and to container IPs, so `curl localhost:8080` from Claude fails even when the server is up (`No route to host` / `Connection reset`). Have the user run it with `!`, or rely on `httptest`.
 - Claude cannot load the page in a browser here, so htmx behaviour (the swap on `/greet`, the 1s clock poll) is only verified by the user or via Playwright MCP.
-- Postgres and the real GitHub login can't be reached from Claude's sandbox. Have the user run DB-backed tests (`TEST_DATABASE_URL=... go test ./internal/adapters/postgres/`) and the browser login flow with `!`.
+- Postgres and the real GitHub login can't be reached from Claude's sandbox. Have the user run DB-backed tests (`TEST_DATABASE_URL=.../babylon_test go test ./internal/adapters/postgres/`; the tests TRUNCATE tables and refuse any database not named `*_test`) and the browser login flow with `!`.

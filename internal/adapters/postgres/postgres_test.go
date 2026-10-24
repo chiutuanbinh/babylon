@@ -3,7 +3,9 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,16 +15,47 @@ import (
 	"babylon/internal/identity"
 )
 
+// isTestDatabase reports whether rawURL names a database whose name ends in
+// "_test". testPool TRUNCATEs tables, so it refuses anything else.
+func isTestDatabase(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimPrefix(u.Path, "/"), "_test")
+}
+
+func TestIsTestDatabase(t *testing.T) {
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{
+		{"postgres://postgres:pg@localhost:5432/babylon_test", true},
+		{"postgres://postgres:pg@localhost:5432/babylon", false},
+		{"postgres://postgres:pg@localhost:5432/x?sslmode=disable", false},
+		{"postgres://postgres:pg@localhost:5432/x_test?sslmode=disable", true},
+		{"postgres://%zz", false},
+		{"", false},
+	} {
+		if got := isTestDatabase(tc.url); got != tc.want {
+			t.Errorf("isTestDatabase(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}
+
 // testPool connects to TEST_DATABASE_URL, migrates, and empties the tables.
 // Without the variable the test is skipped so `go test ./...` needs no database.
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
+	if !isTestDatabase(dbURL) {
+		t.Fatalf("TEST_DATABASE_URL must point at a database whose name ends in _test: these tests TRUNCATE sessions and users, and must never run against real data")
+	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		t.Fatal(err)
 	}

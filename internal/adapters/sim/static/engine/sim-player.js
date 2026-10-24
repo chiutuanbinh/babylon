@@ -88,12 +88,21 @@ class SimPlayer extends HTMLElement {
       return;
     }
 
+    let createScene;
     try {
-      const { createScene } = await import('./scene.js');
+      ({ createScene } = await import('./scene.js'));
+    } catch (err) {
+      console.warn('<sim-player>: 3D engine failed to load', err);
       if (generation !== this.#generation) return;
+      this.#show('The 3D engine failed to load.', true);
+      return;
+    }
+    if (generation !== this.#generation) return;
+    try {
       this.#dispose = this.#mount(loaded, createScene);
     } catch (err) {
       console.warn('<sim-player>: 3D view failed to start', err);
+      if (generation !== this.#generation) return;
       this.#show('The 3D view could not start in this browser (WebGL is required).', true);
     }
   }

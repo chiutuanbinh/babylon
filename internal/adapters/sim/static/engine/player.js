@@ -57,17 +57,22 @@ export class Player {
     return moved;
   }
 
-  seek(target) {
+  // Moves the cursor to target (clamped) without notifying. Returns whether it moved.
+  #seekTo(target) {
     const goal = Math.min(this.#steps.length, Math.max(0, Math.trunc(target)));
     let moved = false;
     while (this.#cursor < goal) moved = this.#forward() || moved;
     while (this.#cursor > goal) moved = this.#back() || moved;
-    if (moved) this.#onChange();
+    return moved;
+  }
+
+  seek(target) {
+    if (this.#seekTo(target)) this.#onChange();
   }
 
   play() {
-    if (this.#steps.length === 0) return;
-    if (this.#cursor >= this.#steps.length) this.seek(0);
+    if (this.#playing || this.#steps.length === 0) return;
+    if (this.#cursor >= this.#steps.length) this.#seekTo(0);
     this.#playing = true;
     this.#credit = 0;
     this.#onChange();
@@ -86,6 +91,7 @@ export class Player {
 
   tick(dt) {
     if (!this.#playing) return;
+    if (!(dt > 0)) return; // NaN, zero and negative dt must not touch #credit
     this.#credit += dt * this.#rate;
     let changed = false;
     while (this.#credit >= 1 && this.#cursor < this.#steps.length) {

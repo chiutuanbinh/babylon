@@ -86,7 +86,7 @@ test('reaching the end stops playback and notifies', () => {
   player.tick(1);
   assert.equal(player.cursor, 3);
   assert.equal(player.playing, false);
-  assert.ok(changes() > before);
+  assert.equal(changes() - before, 1, 'exactly one notification for that tick');
 });
 
 test('play at the end restarts from the beginning', () => {
@@ -97,6 +97,42 @@ test('play at the end restarts from the beginning', () => {
   assert.equal(player.cursor, 0);
   assert.equal(player.playing, true);
   assert.equal(calls.filter((c) => c[0] === 'reverse').length, 3);
+});
+
+test('play at the end restarts and notifies exactly once', () => {
+  const { player, changes } = setup();
+  player.seek(3);
+  const before = changes();
+  player.play();
+  assert.equal(changes() - before, 1);
+  assert.equal(player.cursor, 0);
+  assert.equal(player.playing, true);
+});
+
+test('play while already playing fires no onChange and keeps fractional credit', () => {
+  const { player, changes } = setup();
+  player.setRate(2);
+  player.play();
+  player.tick(0.75); // one step applied, half a step of credit left
+  const before = changes();
+  player.play();
+  assert.equal(changes(), before, 'no notification');
+  player.tick(0.25); // the surviving credit completes the second step
+  assert.equal(player.cursor, 2);
+});
+
+test('tick ignores NaN and negative dt', () => {
+  const { player, changes } = setup();
+  player.setRate(2);
+  player.play();
+  const before = changes();
+  player.tick(NaN);
+  player.tick(-1);
+  assert.equal(player.cursor, 0);
+  assert.equal(changes(), before, 'invalid dt must not notify');
+  player.tick(-5);
+  player.tick(0.5);
+  assert.equal(player.cursor, 1);
 });
 
 test('play with an empty trace stays paused', () => {

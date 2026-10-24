@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"babylon/internal/adapters/sim"
 	"babylon/internal/adapters/web"
 	"babylon/internal/identity/identitytest"
 )
@@ -85,7 +86,7 @@ func TestSecurityHeaders(t *testing.T) {
 	want := map[string]string{
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "same-origin",
-		"Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
 	}
 	for _, path := range []string{"/healthz", "/"} {
 		rec := httptest.NewRecorder()
@@ -98,11 +99,27 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestIndexUsesVendoredHTMX(t *testing.T) {
+	rec := httptest.NewRecorder()
+	routes().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, `src="/static/sim/vendor/htmx/htmx.min.js"`) {
+		t.Errorf("index does not load vendored htmx: %s", body)
+	}
+	if strings.Contains(body, "jsdelivr") {
+		t.Error("index still references jsdelivr")
+	}
+}
+
 func TestBuildHandlerFullChain(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	env := identitytest.NewEnv()
 	ui := &web.Handler{Auth: env.Service, Tokens: env.Tokens, Log: log}
-	h := buildHandler(log, ui.Mount) // panics on a route clash between demo and auth routes
+	simUI, err := sim.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := buildHandler(log, ui.Mount, simUI.Mount) // panics on a route clash between demo, auth and sim routes
 
 	tests := []struct {
 		path, location string
@@ -111,6 +128,8 @@ func TestBuildHandlerFullChain(t *testing.T) {
 		{"/healthz", "", 200},
 		{"/me", "/auth/login", 302},
 		{"/auth/login", "", 302},
+		{"/sim", "", 200},
+		{"/static/sim/vendor/htmx/htmx.min.js", "", 200},
 	}
 	for _, tc := range tests {
 		rec := httptest.NewRecorder()

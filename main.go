@@ -199,14 +199,15 @@ func logging(log *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
-// securityHeaders sets baseline hardening headers on every response. The CSP
-// allows jsDelivr (htmx) and the inline <style> in the demo page.
+// securityHeaders sets baseline hardening headers on every response. Scripts
+// are same-origin only (htmx and three.js are vendored); the CSP also allows
+// inline <style> for the demo page and the simulator pages.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

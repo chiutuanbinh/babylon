@@ -5,6 +5,7 @@ package authz
 
 import "context"
 
+// Action is something a subject can do to a resource.
 type Action string
 
 const (
@@ -29,6 +30,8 @@ type Resource struct {
 	OwnerID string
 }
 
+// Authorizer answers whether sub may perform act on res. A non-nil error means
+// the check itself failed, which callers must treat as a denial.
 type Authorizer interface {
 	Can(ctx context.Context, sub Subject, act Action, res Resource) (bool, error)
 }

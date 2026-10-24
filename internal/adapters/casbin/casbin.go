@@ -28,10 +28,12 @@ m = r.act == p.act && r.sub.ID != "" && (r.sub.Role == %q || r.sub.ID == r.obj.O
 
 var _ authz.Authorizer = (*Authorizer)(nil)
 
+// Authorizer enforces the owner-or-admin policy with an in-memory Casbin enforcer.
 type Authorizer struct {
 	e *casbinlib.Enforcer
 }
 
+// New builds an Authorizer with the model and the read/update/delete policy rows.
 func New() (*Authorizer, error) {
 	m, err := model.NewModelFromString(modelText)
 	if err != nil {
@@ -49,6 +51,8 @@ func New() (*Authorizer, error) {
 	return &Authorizer{e: e}, nil
 }
 
+// Can reports whether sub may perform act on res. Anonymous subjects (empty ID)
+// and unknown actions are always denied.
 func (a *Authorizer) Can(_ context.Context, sub authz.Subject, act authz.Action, res authz.Resource) (bool, error) {
 	// act must be passed as a plain string: Casbin's expression engine compares
 	// with reflect.DeepEqual, so authz.Action("read") never equals the policy's

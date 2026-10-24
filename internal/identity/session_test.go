@@ -32,7 +32,8 @@ func TestHashToken(t *testing.T) {
 	if len(a) != 64 {
 		t.Fatalf("len = %d, want 64 hex chars", len(a))
 	}
-	if a == "tok-1" {
-		t.Fatal("token stored in the clear")
+	// Known-answer vector: SHA-256("abc").
+	if got, want := identity.HashToken("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"; got != want {
+		t.Fatalf("HashToken(abc) = %s, want %s", got, want)
 	}
 }

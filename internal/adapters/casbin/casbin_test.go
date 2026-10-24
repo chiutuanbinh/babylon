@@ -41,6 +41,11 @@ func TestCan(t *testing.T) {
 		{"admin deletes", root, authz.Delete, doc, true},
 		{"anonymous reads", anon, authz.Read, doc, false},
 		{"anonymous reads ownerless resource", anon, authz.Read, authz.Resource{Type: "doc"}, false},
+		{"empty ID with admin role denied", authz.Subject{Role: "admin"}, authz.Read, doc, false},
+		{"non-admin on ownerless resource denied", bob, authz.Read, authz.Resource{Type: "doc"}, false},
+		{"unknown action denied for owner", alice, authz.Action("create"), doc, false},
+		{"anonymous updates", anon, authz.Update, doc, false},
+		{"anonymous deletes", anon, authz.Delete, doc, false},
 		{"unknown action denied even for admin", root, authz.Action("create"), doc, false},
 	}
 	for _, tc := range tests {

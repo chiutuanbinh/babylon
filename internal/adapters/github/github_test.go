@@ -14,6 +14,13 @@ import (
 // status returned by GET /user.
 func fakeGitHub(t *testing.T, userStatus int) *httptest.Server {
 	t.Helper()
+	return fakeGitHubWith(t, userStatus, `{"id":4242,"login":"alice"}`, false)
+}
+
+// fakeGitHubWith also controls the /user body and, with bad200, mimics GitHub's
+// real bad-code response: HTTP 200 carrying {"error": ...}.
+func fakeGitHubWith(t *testing.T, userStatus int, userBody string, bad200 bool) *httptest.Server {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -22,7 +29,9 @@ func fakeGitHub(t *testing.T, userStatus int) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.PostForm.Get("code") != "good-code" {
-			w.WriteHeader(http.StatusBadRequest)
+			if !bad200 {
+				w.WriteHeader(http.StatusBadRequest)
+			}
 			_, _ = io.WriteString(w, `{"error":"bad_verification_code"}`)
 			return
 		}
@@ -38,7 +47,7 @@ func fakeGitHub(t *testing.T, userStatus int) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":4242,"login":"alice"}`)
+		_, _ = io.WriteString(w, userBody)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -91,5 +100,28 @@ func TestExchangeFailsWhenUserAPIFails(t *testing.T) {
 	p := newProvider(fakeGitHub(t, http.StatusInternalServerError))
 	if _, err := p.Exchange(t.Context(), "good-code"); err == nil {
 		t.Fatal("expected error when GET /user returns 500")
+	}
+}
+
+func TestExchangeRejectsBadCodeReturnedAs200(t *testing.T) {
+	p := newProvider(fakeGitHubWith(t, http.StatusOK, `{"id":4242,"login":"alice"}`, true))
+	if _, err := p.Exchange(t.Context(), "bad-code"); err == nil {
+		t.Fatal("expected error for GitHub's 200 + error body")
+	}
+}
+
+func TestExchangeRejectsBadUserBodies(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty object":  `{}`,
+		"not json":      `<html>oops</html>`,
+		"missing id":    `{"login":"alice"}`,
+		"missing login": `{"id":4242}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := newProvider(fakeGitHubWith(t, http.StatusOK, body, false))
+			if _, err := p.Exchange(t.Context(), "good-code"); err == nil {
+				t.Fatalf("expected error for /user body %q", body)
+			}
+		})
 	}
 }

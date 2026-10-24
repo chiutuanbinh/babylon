@@ -66,7 +66,7 @@ htmx and three.js are vendored, pinned, under `internal/adapters/sim/static/vend
 - **Hooks** (`.claude/settings.json`): edits to `.go` files are auto-`gofmt`ed, and no hook guards `go.mod`/`go.sum`. The app prefers the std lib, but a dependency is fine when it clearly beats hand-rolling (auth, crypto, sessions).
 - **Git pre-commit** (`.githooks/pre-commit`): fails the commit if staged `.go` files are not `gofmt`-clean, then runs `go vet ./...`. Enable once per clone: `git config core.hooksPath .githooks`.
 - **Skills:** `project-conventions` (Go and template rules, loaded automatically), `bump-vendor` (user-invoked).
-- **Agent:** `security-reviewer`, read-only. Use it after changing handlers, templates, auth/session code in `internal/adapters/web` and `internal/adapters/github`, or the Dockerfile.
+- **Agent:** `security-reviewer`, read-only. Use it after changing handlers, templates, auth/session code in `internal/adapters/web` and `internal/adapters/github`, the static front end and asset serving in `internal/adapters/sim`, or the Dockerfile.
 - **MCP:** `.mcp.json` pins Playwright for checking the rendered page.
 
 ## Environment gotchas

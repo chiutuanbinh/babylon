@@ -44,11 +44,16 @@ internal/adapters/web/            Go: serve /sim routes and static assets (embed
 internal/adapters/sim/static/      embedded static files, no build step
   index.html                      /sim catalog page
   concept.html                    /sim/{topic}/{id} page: thin shell around <sim-player>
+  catalog.js                      renders the /sim catalog from the registry
+  concept-page.js                 concept page bootstrap (reads topic/id from the URL)
   registry.js                     data: topics, concepts, status, module paths
   engine/
+    input.js                      parse and clamp user-supplied input
+    load.js                       loadConcept: registry lookup and dynamic imports
     player.js                     step cursor: play/pause/step/back, speed
     scene.js                      three.js setup: camera, light, resize, theme
     sim-player.js                 <sim-player> custom element
+    steps.js                      step types and constructors shared by traces and renderers
   concepts/algorithms/sorting/
     bubble.js insertion.js merge.js quick.js     pure trace generators
     bars-renderer.js                             3D bars renderer
@@ -85,13 +90,13 @@ and `routes(mounts...)` mounting, and contain no domain logic (there is none).
 
 ### Module loading and CSP
 
-The existing CSP is `script-src 'self' https://cdn.jsdelivr.net`. Inline
+The CSP used to allow `https://cdn.jsdelivr.net`; it is now `script-src 'self'`. Inline
 scripts are blocked, so **no inline importmap**. Modules import three.js by
 relative or absolute same-origin path, e.g.
-`import * as THREE from '/static/sim/vendor/three/three.module.min.js'`.
+`import * as THREE from '/static/sim/vendor/three/three.module.js'` (which itself imports `./three.core.js`; both are vendored).
 
-Vendoring removes the only external script origin: `https://cdn.jsdelivr.net`
-is dropped from `script-src` (now `'self'`). WebGL needs no extra CSP.
+Vendoring removed the only external script origin: `https://cdn.jsdelivr.net`
+was dropped from `script-src` (now `'self'`). WebGL needs no extra CSP.
 
 ### Vendoring and the htmx change
 

@@ -16,10 +16,15 @@ Container (Apple's `container` CLI, not Docker; start it once with `container sy
 
 ```
 container build -t babylon .
-container run --rm -d --name babylon -p 8080:8080 babylon
+container run --rm -d --name babylon -p 8080:8080 \
+  -e DATABASE_URL=postgres://postgres:pg@<pg-container-ip>:5432/babylon \
+  -e GITHUB_CLIENT_ID=... -e GITHUB_CLIENT_SECRET=... \
+  -e BASE_URL=http://localhost:8080 [-e ADMIN_GITHUB_IDS=12345] babylon
 container logs babylon
 container stop babylon
 ```
+
+The app refuses to boot without the env vars (see Configuration). Inside the container `localhost` is the container itself, so `DATABASE_URL` must use the Postgres container's address (`container ls` shows it).
 
 The final image is distroless with no shell, so you cannot `exec` into it or `curl` from inside.
 
@@ -38,7 +43,7 @@ Local Postgres: `container run -d --name pg -e POSTGRES_PASSWORD=pg -e POSTGRES_
 
 ## Architecture
 
-The demo app lives in `main.go` (package main). New code follows DDD + hexagonal: `internal/<context>` holds domain and application code and its ports (no HTTP/SQL/OAuth/Casbin imports); `internal/adapters/{postgres,github,casbin,web,system}` implement the ports; `main.go` is the composition root. `internal/identity` is the login/session context; `internal/authz` is the shared kernel with the `Authorizer` port (Casbin ABAC: owner or admin). Two response styles share one `ServeMux` built by `routes()`:
+The demo app lives in `main.go` (package main). New code follows DDD + hexagonal: `internal/<context>` holds domain and application code and its ports (no HTTP/SQL/OAuth/Casbin imports); `internal/adapters/{postgres,github,casbin,web,system}` implement the ports; `main.go` is the composition root. `internal/identity` is the login/session context; `internal/authz` is the shared kernel with the `Authorizer` port (Casbin ABAC: owner or admin). The identity routes (`GET /auth/login`, `GET /auth/callback`, `POST /auth/logout`, login-protected `GET /me`) are mounted by the `web` adapter via `routes(mounts...)`. The Casbin adapter and `authz.Authorizer` exist and are tested but are NOT wired into `main.go` yet (no resource consumes them), so no route enforces authorization yet. Two response styles share one `ServeMux` built by `routes(mounts...)`:
 
 - **JSON endpoints** (`/healthz`, `/hello/{name}`) go through `writeJSON`.
 - **HTML endpoints** (`/`, `POST /greet`, `GET /time`) go through `render`, which executes a named template from `templates/index.html`. The full page is the `index` template. `greeting` and `time` are *fragments* that htmx swaps in. `time` is also embedded in `index`, so the first paint and the 1s poll share one template.
@@ -53,7 +58,7 @@ htmx is not vendored. `templates/index.html` loads a pinned version from jsDeliv
 
 - **Hooks** (`.claude/settings.json`): edits to `.go` files are auto-`gofmt`ed, and no hook guards `go.mod`/`go.sum`. The app prefers the std lib, but a dependency is fine when it clearly beats hand-rolling (auth, crypto, sessions).
 - **Skills:** `project-conventions` (Go and template rules, loaded automatically), `bump-htmx` (user-invoked).
-- **Agent:** `security-reviewer`, read-only. Use it after changing handlers, templates or the Dockerfile.
+- **Agent:** `security-reviewer`, read-only. Use it after changing handlers, templates, auth/session code in `internal/adapters/web` and `internal/adapters/github`, or the Dockerfile.
 - **MCP:** `.mcp.json` pins Playwright for checking the rendered page.
 
 ## Environment gotchas

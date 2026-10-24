@@ -16,7 +16,7 @@ user-invocable: false
 - **Hexagonal layout.** Domain and application code in `internal/<context>` imports no HTTP, SQL, OAuth or Casbin packages; it declares ports in `ports.go`. Adapters live in `internal/adapters/<name>` and implement them. Wire everything in `main.go`.
 
 ## Templates / htmx
-- Templates live in `templates/*.html`, embedded with `go:embed`, parsed once into `tmpl`. Use `html/template` only, never `text/template`, so output is auto-escaped.
+- Templates live in `templates/*.html`, embedded with `go:embed`, parsed once into `tmpl`. Use `html/template` only, never `text/template`, so output is auto-escaped. The web adapter keeps its own `internal/adapters/web/templates/*.html` with its own embedded `tmpl`/`render`; the same `html/template` and buffered-render rules apply there.
 - Full page is the `index` template. htmx endpoints return **fragments** (`greeting`, `time`), not full pages.
 - htmx is loaded from jsDelivr, pinned to an exact version with an SRI `integrity` hash. Change version and hash together, via the `bump-htmx` skill. Never use an unpinned tag.
 

@@ -71,8 +71,9 @@ sessions(token_hash TEXT PK, user_id BIGINT NOT NULL REFERENCES users,
 - `GET /auth/login`: set random `state` cookie, redirect to GitHub.
 - `GET /auth/callback`: verify `state`, exchange code, fetch GitHub `GET /user`,
   upsert user by `github_id`, set role `admin` if the numeric GitHub user ID is in
-  `ADMIN_GITHUB_IDS` else `user`. IDs, not logins: a login is mutable and can be
-  re-registered by someone else after the admin renames or deletes their account (re-synced on every login), create session, redirect to `/`.
+  `ADMIN_GITHUB_IDS` else `user` (re-synced on every login), create session,
+  redirect to `/`. IDs, not logins: a login is mutable and can be re-registered
+  by someone else after the admin renames or deletes their account.
 - `POST /auth/logout`: delete session row, clear cookie.
 - `GET /me`: login-protected; shows GitHub login and role. Proves SSO, sessions,
   admin mapping and logout end to end.
@@ -87,6 +88,11 @@ sessions(token_hash TEXT PK, user_id BIGINT NOT NULL REFERENCES users,
   nothing but `requireUser` consumes the user yet.
 
 ## Authorization
+
+Role changes (including removal from `ADMIN_GITHUB_IDS`) take effect at the
+user's next login; existing sessions keep their stored role for up to 7 days.
+Resolve this (re-derive the role in Authenticate, or revoke sessions on
+demotion) when the first resource context wires the Authorizer.
 
 Casbin ABAC model (owner or admin):
 

@@ -84,6 +84,9 @@ type Sessions struct{ m map[string]identity.Session }
 func NewSessions() *Sessions { return &Sessions{m: map[string]identity.Session{}} }
 
 func (s *Sessions) Create(_ context.Context, sess identity.Session) error {
+	if _, dup := s.m[sess.TokenHash]; dup {
+		return errors.New("identitytest: duplicate session token hash") // Postgres: PK violation
+	}
 	s.m[sess.TokenHash] = sess
 	return nil
 }

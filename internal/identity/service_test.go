@@ -215,3 +215,17 @@ func TestLoginURLDelegatesToProvider(t *testing.T) {
 		t.Fatalf("LoginURL = %q, want %q", got, want)
 	}
 }
+
+func TestFakeSessionsRejectDuplicateTokenHash(t *testing.T) {
+	s := identitytest.NewSessions()
+	sess := identity.Session{TokenHash: "h", UserID: 1}
+	if err := s.Create(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Create(ctx, sess); err == nil {
+		t.Fatal("second Create with the same TokenHash succeeded; Postgres would violate the primary key")
+	}
+	if s.Len() != 1 {
+		t.Fatalf("Len = %d, want 1", s.Len())
+	}
+}

@@ -15,7 +15,7 @@ import (
 	"babylon/internal/identity/identitytest"
 )
 
-func newServer(t *testing.T, secure bool, admins ...string) (http.Handler, *identitytest.Env) {
+func newServer(t *testing.T, secure bool, admins ...int64) (http.Handler, *identitytest.Env) {
 	t.Helper()
 	env := identitytest.NewEnv(admins...)
 	h := &web.Handler{
@@ -109,7 +109,7 @@ func TestCookiesAreSecureWhenConfigured(t *testing.T) {
 // The core multi-user scenario: each person sees only their own identity, and
 // the admin allowlist is honoured.
 func TestMeShowsEachUsersOwnIdentity(t *testing.T) {
-	h, _ := newServer(t, false, "root")
+	h, _ := newServer(t, false, 1)
 	alice := login(t, h, "code-alice")
 	bob := login(t, h, "code-bob")
 	root := login(t, h, "code-root")

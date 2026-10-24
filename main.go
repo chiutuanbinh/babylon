@@ -62,7 +62,7 @@ func main() {
 		}),
 		Tokens:     system.Tokens{},
 		Clock:      system.Clock{},
-		Admins:     cfg.AdminLogins,
+		Admins:     cfg.AdminGitHubIDs,
 		SessionTTL: 7 * 24 * time.Hour,
 	}
 	ui := &web.Handler{

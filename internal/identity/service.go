@@ -14,7 +14,7 @@ type Service struct {
 	Provider   IdentityProvider
 	Tokens     TokenGenerator
 	Clock      Clock
-	Admins     []string
+	Admins     []int64 // numeric GitHub user IDs
 	SessionTTL time.Duration
 }
 
@@ -39,7 +39,7 @@ func (s *Service) LoginWithGitHub(ctx context.Context, code string) (LoginResult
 	user, err := s.Users.UpsertByGitHubID(ctx, User{
 		GitHubID:  profile.GitHubID,
 		Login:     profile.Login,
-		Role:      RoleFor(profile.Login, s.Admins),
+		Role:      RoleFor(profile.GitHubID, s.Admins),
 		CreatedAt: now,
 	})
 	if err != nil {

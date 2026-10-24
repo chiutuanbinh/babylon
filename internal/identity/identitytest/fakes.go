@@ -24,7 +24,7 @@ type Env struct {
 	Provider *Provider
 }
 
-func NewEnv(admins ...string) *Env {
+func NewEnv(admins ...int64) *Env {
 	clock := &Clock{T: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 	sessions := NewSessions()
 	tokens := &Tokens{}

@@ -37,7 +37,7 @@ func TestLoginCreatesUserAndSession(t *testing.T) {
 }
 
 func TestAdminRoleFromAllowlist(t *testing.T) {
-	env := identitytest.NewEnv("root") // profile login is "Root": match is case-insensitive
+	env := identitytest.NewEnv(1) // code-root has GitHub ID 1
 	res, err := env.Service.LoginWithGitHub(ctx, "code-root")
 	if err != nil {
 		t.Fatal(err)
@@ -47,13 +47,27 @@ func TestAdminRoleFromAllowlist(t *testing.T) {
 	}
 }
 
+// Regression: admin is keyed on the immutable GitHub ID, so someone who
+// re-registers an admin's released login does not inherit admin.
+func TestAdminTakeoverByLoginIsClosed(t *testing.T) {
+	env := identitytest.NewEnv(1)
+	env.Provider.Codes["code-imposter"] = identity.Profile{GitHubID: 999, Login: "Root"}
+	res, err := env.Service.LoginWithGitHub(ctx, "code-imposter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.User.Role != identity.RoleUser {
+		t.Fatalf("role = %q, want user: same login, different GitHub ID", res.User.Role)
+	}
+}
+
 func TestRoleResyncedOnEveryLogin(t *testing.T) {
-	env := identitytest.NewEnv("root")
+	env := identitytest.NewEnv(1)
 	first, err := env.Service.LoginWithGitHub(ctx, "code-root")
 	if err != nil || first.User.Role != identity.RoleAdmin {
 		t.Fatalf("first login: %+v, %v", first.User, err)
 	}
-	env.Service.Admins = nil // removed from ADMIN_LOGINS
+	env.Service.Admins = nil // removed from ADMIN_GITHUB_IDS
 	second, err := env.Service.LoginWithGitHub(ctx, "code-root")
 	if err != nil {
 		t.Fatal(err)

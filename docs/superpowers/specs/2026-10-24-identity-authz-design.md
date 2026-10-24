@@ -27,7 +27,7 @@ OAuth or Casbin packages. Adapters implement ports.
 main.go                     composition root: read env, build adapters, wire, serve
 internal/
   identity/                 bounded context
-    user.go, session.go     domain: User, Role, Session, RoleFor(login, admins),
+    user.go, session.go     domain: User, Role, Session, RoleFor(githubID, admins),
                             Session.Expired(now)
     service.go              app: LoginWithGitHub, Authenticate, Logout
     ports.go                UserRepo, SessionRepo, IdentityProvider,
@@ -41,6 +41,10 @@ internal/
     casbin/                 Authorizer
     web/                    handlers, middleware, templates, mounted on the mux
 ```
+
+The Casbin adapter and `authz.Authorizer` exist and are tested but are NOT wired
+into `main.go` yet: no resource consumes them, so no route enforces authorization
+yet.
 
 Existing handlers and templates in `main.go` are not moved. The `web` adapter
 registers its routes on the same mux via `routes(mounts ...func(*http.ServeMux))`, which remains the test seam.
@@ -60,14 +64,15 @@ sessions(token_hash TEXT PK, user_id BIGINT NOT NULL REFERENCES users,
 
 - Cookie holds a random 32-byte token; the DB stores only its SHA-256.
 - Cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` unless `BASE_URL` is
-  `http://localhost...`. Lifetime 7 days.
+  plain `http` on exactly `localhost` or `127.0.0.1`. Lifetime 7 days.
 
 ### Routes
 
 - `GET /auth/login`: set random `state` cookie, redirect to GitHub.
 - `GET /auth/callback`: verify `state`, exchange code, fetch GitHub `GET /user`,
-  upsert user by `github_id`, set role `admin` if `login` is in `ADMIN_LOGINS`
-  else `user` (re-synced on every login), create session, redirect to `/`.
+  upsert user by `github_id`, set role `admin` if the numeric GitHub user ID is in
+  `ADMIN_GITHUB_IDS` else `user`. IDs, not logins: a login is mutable and can be
+  re-registered by someone else after the admin renames or deletes their account (re-synced on every login), create session, redirect to `/`.
 - `POST /auth/logout`: delete session row, clear cookie.
 - `GET /me`: login-protected; shows GitHub login and role. Proves SSO, sessions,
   admin mapping and logout end to end.
@@ -106,8 +111,9 @@ m = r.act == p.act && r.sub.ID != "" && (r.sub.Role == "admin" || r.sub.ID == r.
 ## Configuration
 
 Env: `DATABASE_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `BASE_URL`,
-`ADMIN_LOGINS` (comma-separated). The app fails at boot if required values are
-missing.
+`ADMIN_GITHUB_IDS` (optional, comma-separated numeric GitHub user IDs). The app
+fails at boot if required values are missing or `BASE_URL` / `ADMIN_GITHUB_IDS`
+are malformed.
 
 Dependencies: `github.com/jackc/pgx/v5`, `golang.org/x/oauth2`,
 `github.com/casbin/casbin/v2`.
@@ -125,7 +131,7 @@ Dependencies: `github.com/jackc/pgx/v5`, `golang.org/x/oauth2`,
 - Postgres adapter: runs only when `TEST_DATABASE_URL` is set, skips otherwise,
   so `go test ./...` needs nothing running.
 - Manual end to end with two real GitHub accounts in separate browser profiles;
-  one login listed in `ADMIN_LOGINS`. The Claude sandbox blocks localhost, so the
+  one account whose ID is listed in `ADMIN_GITHUB_IDS`. The Claude sandbox blocks localhost, so the
   user runs this.
 - No dev-login backdoor route.
 

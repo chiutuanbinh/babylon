@@ -31,7 +31,7 @@ The app refuses to boot without these env vars:
 DATABASE_URL=postgres://postgres:pg@localhost:5432/babylon   # Postgres
 GITHUB_CLIENT_ID=...  GITHUB_CLIENT_SECRET=...                # GitHub OAuth app
 BASE_URL=http://localhost:8080                                # callback is BASE_URL/auth/callback
-ADMIN_LOGINS=alice,bob                                        # optional; these GitHub logins become admins
+ADMIN_GITHUB_IDS=12345,67890   # optional; GitHub numeric user IDs that become admins (find yours at https://api.github.com/users/<login>)
 ```
 
 Local Postgres: `container run -d --name pg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=babylon -p 5432:5432 postgres:17`. Postgres integration tests run only when `TEST_DATABASE_URL` is set; otherwise they skip.

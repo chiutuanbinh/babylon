@@ -4,7 +4,6 @@ package identity
 
 import (
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -28,14 +27,15 @@ type User struct {
 	CreatedAt time.Time
 }
 
-// RoleFor maps a GitHub login to a role. GitHub logins are case-insensitive.
-// An empty login is never an admin, even if the allowlist has an empty entry.
-func RoleFor(login string, admins []string) Role {
-	if login == "" {
+// RoleFor maps an immutable numeric GitHub user ID to a role. Logins are
+// mutable and can be re-registered by someone else, so they are never used.
+// A zero or negative ID is never an admin, even if the allowlist contains it.
+func RoleFor(githubID int64, admins []int64) Role {
+	if githubID <= 0 {
 		return RoleUser
 	}
 	for _, a := range admins {
-		if strings.EqualFold(strings.TrimSpace(a), login) {
+		if a == githubID {
 			return RoleAdmin
 		}
 	}

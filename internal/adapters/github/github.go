@@ -22,6 +22,9 @@ type Config struct {
 	AuthURL, TokenURL, APIURL           string
 }
 
+// exchangeTimeout caps a whole Exchange; a variable only so tests can shrink it.
+var exchangeTimeout = 8 * time.Second
+
 var _ identity.IdentityProvider = (*Provider)(nil)
 
 // Provider is the GitHub OAuth implementation of identity.IdentityProvider.
@@ -67,7 +70,7 @@ func (p *Provider) AuthURL(state string) string {
 // server's 10s WriteTimeout, so a slow GitHub yields our error, not a dropped
 // connection.
 func (p *Provider) Exchange(ctx context.Context, code string) (identity.Profile, error) {
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, exchangeTimeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, p.client)
 	tok, err := p.oauth.Exchange(ctx, code)

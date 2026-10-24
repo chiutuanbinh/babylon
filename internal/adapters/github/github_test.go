@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"babylon/internal/adapters/github"
@@ -25,6 +26,15 @@ func fakeGitHubWith(t *testing.T, userStatus int, userBody string, bad200 bool) 
 	mux.HandleFunc("POST /login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Credentials must go in the form, never a Basic Authorization header
+		// (AuthStyleInParams; auto-detect would first try the header).
+		if r.PostForm.Get("client_id") != "cid" || r.PostForm.Get("client_secret") != "secret" ||
+			r.Header.Get("Authorization") != "" {
+			// Also record it: oauth2's auto-detect would retry in params and mask a 400.
+			t.Errorf("token request: client credentials must be in the POST form only (auth header %q)", r.Header.Get("Authorization"))
+			http.Error(w, "client credentials must be in the POST form only", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -123,5 +133,14 @@ func TestExchangeRejectsBadUserBodies(t *testing.T) {
 				t.Fatalf("expected error for /user body %q", body)
 			}
 		})
+	}
+}
+
+func TestExchangeRejectsOversizedUserBody(t *testing.T) {
+	// Valid JSON, but padded past the 1 MiB read limit: truncation breaks it.
+	body := `{"id":1,"login":"a","pad":"` + strings.Repeat("x", 2<<20) + `"}`
+	p := newProvider(fakeGitHubWith(t, http.StatusOK, body, false))
+	if _, err := p.Exchange(t.Context(), "good-code"); err == nil {
+		t.Fatal("expected error for /user body over 1 MiB")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"babylon/internal/adapters/sim"
 	"babylon/internal/adapters/web"
@@ -143,5 +144,37 @@ func TestBuildHandlerFullChain(t *testing.T) {
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Content-Security-Policy") == "" {
 			t.Errorf("GET %s: security headers missing: %v", tc.path, rec.Header())
 		}
+	}
+}
+
+// deadlineWriter records SetWriteDeadline calls, like the real connection
+// writer that http.ResponseController reaches through Unwrap.
+type deadlineWriter struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (d *deadlineWriter) SetWriteDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	return nil
+}
+
+func TestAssetExtendsWriteDeadlineThroughChain(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	simUI, err := sim.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := buildHandler(log, simUI.Mount)
+	w := &deadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/static/sim/vendor/three/three.core.js", nil))
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if len(w.deadlines) != 1 {
+		t.Fatalf("SetWriteDeadline calls = %d, want 1 (not reachable through the middleware chain?)", len(w.deadlines))
+	}
+	if d := time.Until(w.deadlines[0]); d < 30*time.Second {
+		t.Errorf("deadline in %v, want well beyond the server's 10s WriteTimeout", d)
 	}
 }

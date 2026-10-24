@@ -101,5 +101,9 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, name string) {
 	}
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
+	// The server's WriteTimeout (10s) would cut off large files such as
+	// three.core.js (~1.5 MB) on slow links. Ignore the error: recorders and
+	// wrappers without deadline support just keep the server default.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(60 * time.Second))
 	http.ServeContent(w, r, name, time.Time{}, rs)
 }

@@ -52,6 +52,14 @@ func loadConfig(rawGetenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("BASE_URL must be an absolute http(s) URL, got %q", c.BaseURL)
 	}
 
+	if h := u.Hostname(); u.Scheme == "http" && h != "localhost" && h != "127.0.0.1" {
+		return config{}, fmt.Errorf("BASE_URL %q uses plain http; use https (http is only allowed for localhost or 127.0.0.1)", c.BaseURL)
+	}
+
+	if getenv("ADMIN_LOGINS") != "" {
+		return config{}, fmt.Errorf("ADMIN_LOGINS is no longer supported; set ADMIN_GITHUB_IDS to numeric GitHub user IDs")
+	}
+
 	ids, err := parseGitHubIDs(getenv("ADMIN_GITHUB_IDS"))
 	if err != nil {
 		return config{}, err

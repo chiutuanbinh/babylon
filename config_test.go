@@ -64,7 +64,7 @@ func TestLoadConfigNamesEveryMissingVar(t *testing.T) {
 }
 
 func TestLoadConfigRejectsBadAdminIDs(t *testing.T) {
-	for _, v := range []string{"alice", "12,bob", "0", "-5", "1.5"} {
+	for _, v := range []string{"alice", "12,bob", "0", "-5", "1.5", "99999999999999999999"} {
 		env := fullEnv()
 		env["ADMIN_GITHUB_IDS"] = v
 		_, err := loadConfig(envFrom(env))
@@ -111,10 +111,42 @@ func TestSecureCookies(t *testing.T) {
 		"http://127.0.0.1.evil.com":      true,
 		"http://localhost@evil.com":      true,
 		"http://localhost.evil.com:8080": true,
+		// Failing safe is intended: anything not exactly localhost/127.0.0.1
+		// gets Secure cookies, even if it is really a loopback address.
+		"http://LOCALHOST:8080":  true,
+		"http://localhost.:8080": true,
+		"http://[::1]:8080":      true,
 	}
 	for base, want := range tests {
 		if got := (config{BaseURL: base}).secureCookies(); got != want {
 			t.Errorf("secureCookies(%q) = %v, want %v", base, got, want)
 		}
+	}
+}
+
+func TestLoadConfigRejectsPlainHTTPOutsideLoopback(t *testing.T) {
+	for _, v := range []string{"http://example.com", "http://LOCALHOST:8080", "http://[::1]:8080", "http://localhost.evil.com"} {
+		env := fullEnv()
+		env["BASE_URL"] = v
+		_, err := loadConfig(envFrom(env))
+		if err == nil || !strings.Contains(err.Error(), "BASE_URL") || !strings.Contains(err.Error(), "https") {
+			t.Errorf("BASE_URL=%q: err = %v, want error naming BASE_URL and https", v, err)
+		}
+	}
+	for _, v := range []string{"https://example.com", "http://localhost:8080", "http://127.0.0.1:8080"} {
+		env := fullEnv()
+		env["BASE_URL"] = v
+		if _, err := loadConfig(envFrom(env)); err != nil {
+			t.Errorf("BASE_URL=%q: unexpected error %v", v, err)
+		}
+	}
+}
+
+func TestLoadConfigRejectsLegacyAdminLogins(t *testing.T) {
+	env := fullEnv()
+	env["ADMIN_LOGINS"] = "alice"
+	_, err := loadConfig(envFrom(env))
+	if err == nil || !strings.Contains(err.Error(), "ADMIN_LOGINS is no longer supported") {
+		t.Fatalf("err = %v, want ADMIN_LOGINS unsupported error", err)
 	}
 }

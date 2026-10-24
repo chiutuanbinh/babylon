@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS users (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     github_id  BIGINT      NOT NULL UNIQUE,
@@ -13,3 +14,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions (user_id);
+
+-- +goose Down
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;

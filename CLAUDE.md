@@ -43,6 +43,10 @@ Local Postgres: `container run -d --name pg -e POSTGRES_PASSWORD=pg -e POSTGRES_
 
 `BASE_URL` may use `http` only for `localhost` or `127.0.0.1` (cookies are Secure otherwise); anything else must be `https`. `ADMIN_LOGINS` is no longer supported and makes boot fail; use `ADMIN_GITHUB_IDS`.
 
+## SQL changes
+
+All schema/SQL edits go through goose migrations: add a new numbered file in `internal/adapters/postgres/migrations/` (`NNNNN_name.sql`, with `-- +goose Up` and `-- +goose Down`). Never edit an applied migration, never run ad-hoc DDL against a database, never add schema SQL elsewhere. `postgres.Migrate` applies pending files at boot. Optional CLI for scaffolding: `go run github.com/pressly/goose/v3/cmd/goose@v3.29.0 -dir internal/adapters/postgres/migrations create <name> sql`.
+
 ## Architecture
 
 The demo app lives in `main.go` (package main). New code follows DDD + hexagonal: `internal/<context>` holds domain and application code and its ports (no HTTP/SQL/OAuth/Casbin imports); `internal/adapters/{postgres,github,casbin,web,system}` implement the ports; `main.go` is the composition root. `internal/identity` is the login/session context; `internal/authz` is the shared kernel with the `Authorizer` port (Casbin ABAC: owner or admin). The identity routes (`GET /auth/login`, `GET /auth/callback`, `POST /auth/logout`, login-protected `GET /me`) are mounted by the `web` adapter via `routes(mounts...)`. The Casbin adapter and `authz.Authorizer` exist and are tested but are NOT wired into `main.go` yet (no resource consumes them), so no route enforces authorization yet. Two response styles share one `ServeMux` built by `routes(mounts...)`:

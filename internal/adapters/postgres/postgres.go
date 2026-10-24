@@ -3,20 +3,33 @@ package postgres
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"fmt"
+	"io/fs"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 )
 
-//go:embed schema.sql
-var schema string
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
 
-// Migrate applies the schema. Every statement is idempotent, so it is safe to
-// run on every boot. With no arguments pgx uses the simple protocol, which
-// allows several statements in one Exec.
+// Migrate applies pending goose migrations. All SQL schema changes must be a
+// new numbered file in migrations/; never edit an applied one. Safe to run on
+// every boot: goose records applied versions in goose_db_version.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, schema); err != nil {
+	fsys, err := fs.Sub(migrationFiles, "migrations")
+	if err != nil {
+		return fmt.Errorf("postgres: migrate: %w", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	p, err := goose.NewProvider(goose.DialectPostgres, db, fsys)
+	if err != nil {
+		return fmt.Errorf("postgres: migrate: %w", err)
+	}
+	if _, err := p.Up(ctx); err != nil {
 		return fmt.Errorf("postgres: migrate: %w", err)
 	}
 	return nil

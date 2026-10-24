@@ -14,6 +14,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"babylon/internal/adapters/github"
+	"babylon/internal/adapters/postgres"
+	"babylon/internal/adapters/system"
+	"babylon/internal/adapters/web"
+	"babylon/internal/identity"
 )
 
 //go:embed templates
@@ -24,25 +32,62 @@ var tmpl = template.Must(template.ParseFS(assets, "templates/*.html"))
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	addr := ":8080"
-	if v := os.Getenv("ADDR"); v != "" {
-		addr = v
+	cfg, err := loadConfig(os.Getenv)
+	if err != nil {
+		log.Error("config", "err", err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Bound boot-time DB work so an unreachable database cannot hang startup.
+	bootCtx, cancelBoot := context.WithTimeout(ctx, 10*time.Second)
+	pool, err := pgxpool.New(bootCtx, cfg.DatabaseURL)
+	if err != nil {
+		cancelBoot()
+		log.Error("database", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	if err := postgres.Migrate(bootCtx, pool); err != nil {
+		cancelBoot()
+		log.Error("migrate", "err", err)
+		os.Exit(1)
+	}
+	cancelBoot()
+
+	auth := &identity.Service{
+		Users:    postgres.NewUserRepo(pool),
+		Sessions: postgres.NewSessionRepo(pool),
+		Provider: github.New(github.Config{
+			ClientID:     cfg.GitHubClientID,
+			ClientSecret: cfg.GitHubClientSecret,
+			RedirectURL:  cfg.BaseURL + "/auth/callback",
+		}),
+		Tokens:     system.Tokens{},
+		Clock:      system.Clock{},
+		Admins:     cfg.AdminGitHubIDs,
+		SessionTTL: 7 * 24 * time.Hour,
+	}
+	ui := &web.Handler{
+		Auth:          auth,
+		Tokens:        system.Tokens{},
+		Log:           log,
+		SecureCookies: cfg.secureCookies(),
 	}
 
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           logging(log, routes()),
+		Addr:              cfg.Addr,
+		Handler:           buildHandler(log, ui.Mount),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
-		log.Info("listening", "addr", addr)
+		log.Info("listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("server failed", "err", err)
 			os.Exit(1)
@@ -60,13 +105,23 @@ func main() {
 	}
 }
 
-func routes() http.Handler {
+// buildHandler is the full production chain: logging, security headers, routes.
+func buildHandler(log *slog.Logger, mounts ...func(*http.ServeMux)) http.Handler {
+	return logging(log, securityHeaders(routes(mounts...)))
+}
+
+// routes builds the mux. Mounts let adapters register their own routes; with
+// none given it serves only the demo routes, which is what most tests want.
+func routes(mounts ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("POST /greet", handleGreet)
 	mux.HandleFunc("GET /time", handleTime)
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /hello/{name}", handleHello)
+	for _, mount := range mounts {
+		mount(mux)
+	}
 	return mux
 }
 
@@ -134,5 +189,17 @@ func logging(log *slog.Logger, next http.Handler) http.Handler {
 			"status", rec.status,
 			"dur", time.Since(start),
 		)
+	})
+}
+
+// securityHeaders sets baseline hardening headers on every response. The CSP
+// allows jsDelivr (htmx) and the inline <style> in the demo page.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
 	})
 }

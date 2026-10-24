@@ -1,10 +1,15 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"babylon/internal/adapters/web"
+	"babylon/internal/identity/identitytest"
 )
 
 func TestRoutes(t *testing.T) {
@@ -53,5 +58,71 @@ func TestGreet(t *testing.T) {
 	rec := post("name=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
 	if strings.Contains(rec.Body.String(), "<script>") {
 		t.Fatalf("name not escaped: %q", rec.Body.String())
+	}
+}
+
+func TestRoutesMountsExtraRoutes(t *testing.T) {
+	h := routes(func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /extra", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("mounted"))
+		})
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/extra", nil))
+	if rec.Code != 200 || rec.Body.String() != "mounted" {
+		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+	// Existing routes still work alongside mounts.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if rec.Code != 200 {
+		t.Fatalf("/healthz = %d", rec.Code)
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	h := logging(slog.New(slog.NewTextHandler(io.Discard, nil)), securityHeaders(routes()))
+	want := map[string]string{
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "same-origin",
+		"Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+	}
+	for _, path := range []string{"/healthz", "/"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		for k, v := range want {
+			if got := rec.Header().Get(k); got != v {
+				t.Errorf("GET %s: %s = %q, want %q", path, k, got, v)
+			}
+		}
+	}
+}
+
+func TestBuildHandlerFullChain(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	env := identitytest.NewEnv()
+	ui := &web.Handler{Auth: env.Service, Tokens: env.Tokens, Log: log}
+	h := buildHandler(log, ui.Mount) // panics on a route clash between demo and auth routes
+
+	tests := []struct {
+		path, location string
+		status         int
+	}{
+		{"/healthz", "", 200},
+		{"/me", "/auth/login", 302},
+		{"/auth/login", "", 302},
+	}
+	for _, tc := range tests {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
+		if rec.Code != tc.status {
+			t.Errorf("GET %s: status = %d, want %d", tc.path, rec.Code, tc.status)
+		}
+		if tc.location != "" && rec.Header().Get("Location") != tc.location {
+			t.Errorf("GET %s: Location = %q, want %q", tc.path, rec.Header().Get("Location"), tc.location)
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Content-Security-Policy") == "" {
+			t.Errorf("GET %s: security headers missing: %v", tc.path, rec.Header())
+		}
 	}
 }

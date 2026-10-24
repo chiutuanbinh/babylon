@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$(basename \"$f\")\" in go.mod|go.sum) echo 'blocked: babylon is std-lib only; go.mod/go.sum are protected' >&2; exit 2;; esac; }"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; case \"$f\" in *.go) gofmt -w \"$f\" 2>/dev/null;; esac; } || true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{{define "index"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>babylon</title><script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"></script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 36rem; margin: 3rem auto; padding: 0 1rem; }
+  section { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+  h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+  input, button { font: inherit; padding: .3rem .6rem; }
+  .htmx-request { opacity: .5; }
+</style>
+</head>
+<body>
+<h1>babylon</h1>
+
+<section>
+  <h2>Greeting</h2>
+  <form hx-post="/greet" hx-target="#greeting" hx-swap="innerHTML">
+    <input name="name" placeholder="your name" autocomplete="off" required>
+    <button>Greet</button>
+  </form>
+  <p id="greeting"></p>
+</section>
+
+<section>
+  <h2>Server time</h2>
+  <div hx-get="/time" hx-trigger="load, every 1s" hx-swap="innerHTML">{{template "time" .Now}}</div>
+</section>
+</body>
+</html>{{end}}
+
+{{define "greeting"}}Hello, {{.}}!{{end}}
+
+{{define "time"}}<time>{{.Format "15:04:05"}}</time>{{end}}

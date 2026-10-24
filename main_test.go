@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,5 +74,23 @@ func TestRoutesMountsExtraRoutes(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
 	if rec.Code != 200 {
 		t.Fatalf("/healthz = %d", rec.Code)
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	h := logging(slog.New(slog.NewTextHandler(io.Discard, nil)), securityHeaders(routes()))
+	want := map[string]string{
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "same-origin",
+		"Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+	}
+	for _, path := range []string{"/healthz", "/"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		for k, v := range want {
+			if got := rec.Header().Get(k); got != v {
+				t.Errorf("GET %s: %s = %q, want %q", path, k, got, v)
+			}
+		}
 	}
 }

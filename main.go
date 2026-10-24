@@ -74,7 +74,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           logging(log, routes(ui.Mount)),
+		Handler:           logging(log, securityHeaders(routes(ui.Mount))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -179,5 +179,17 @@ func logging(log *slog.Logger, next http.Handler) http.Handler {
 			"status", rec.status,
 			"dur", time.Since(start),
 		)
+	})
+}
+
+// securityHeaders sets baseline hardening headers on every response. The CSP
+// allows jsDelivr (htmx) and the inline <style> in the demo page.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
 	})
 }

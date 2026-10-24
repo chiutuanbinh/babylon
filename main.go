@@ -14,6 +14,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"babylon/internal/adapters/github"
+	"babylon/internal/adapters/postgres"
+	"babylon/internal/adapters/system"
+	"babylon/internal/adapters/web"
+	"babylon/internal/identity"
 )
 
 //go:embed templates
@@ -24,25 +32,57 @@ var tmpl = template.Must(template.ParseFS(assets, "templates/*.html"))
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	addr := ":8080"
-	if v := os.Getenv("ADDR"); v != "" {
-		addr = v
+	cfg, err := loadConfig(os.Getenv)
+	if err != nil {
+		log.Error("config", "err", err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Error("database", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		log.Error("migrate", "err", err)
+		os.Exit(1)
+	}
+
+	auth := &identity.Service{
+		Users:    postgres.NewUserRepo(pool),
+		Sessions: postgres.NewSessionRepo(pool),
+		Provider: github.New(github.Config{
+			ClientID:     cfg.GitHubClientID,
+			ClientSecret: cfg.GitHubClientSecret,
+			RedirectURL:  cfg.BaseURL + "/auth/callback",
+		}),
+		Tokens:     system.Tokens{},
+		Clock:      system.Clock{},
+		Admins:     cfg.AdminLogins,
+		SessionTTL: 7 * 24 * time.Hour,
+	}
+	ui := &web.Handler{
+		Auth:          auth,
+		Tokens:        system.Tokens{},
+		Log:           log,
+		SecureCookies: cfg.secureCookies(),
 	}
 
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           logging(log, routes()),
+		Addr:              cfg.Addr,
+		Handler:           logging(log, routes(ui.Mount)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
-		log.Info("listening", "addr", addr)
+		log.Info("listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("server failed", "err", err)
 			os.Exit(1)
@@ -60,13 +100,18 @@ func main() {
 	}
 }
 
-func routes() http.Handler {
+// routes builds the mux. Mounts let adapters register their own routes; with
+// none given it serves only the demo routes, which is what most tests want.
+func routes(mounts ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("POST /greet", handleGreet)
 	mux.HandleFunc("GET /time", handleTime)
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /hello/{name}", handleHello)
+	for _, mount := range mounts {
+		mount(mux)
+	}
 	return mux
 }
 

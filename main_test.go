@@ -55,3 +55,22 @@ func TestGreet(t *testing.T) {
 		t.Fatalf("name not escaped: %q", rec.Body.String())
 	}
 }
+
+func TestRoutesMountsExtraRoutes(t *testing.T) {
+	h := routes(func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /extra", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("mounted"))
+		})
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/extra", nil))
+	if rec.Code != 200 || rec.Body.String() != "mounted" {
+		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+	// Existing routes still work alongside mounts.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if rec.Code != 200 {
+		t.Fatalf("/healthz = %d", rec.Code)
+	}
+}

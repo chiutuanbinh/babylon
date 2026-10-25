@@ -33,7 +33,7 @@ var tmpl = template.Must(template.ParseFS(assets, "templates/*.html"))
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	cfg, err := loadConfig(os.Getenv)
+	cfg, err := readConfig(os.LookupEnv)
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)

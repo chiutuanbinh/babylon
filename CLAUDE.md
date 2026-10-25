@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick setup
+
+```
+make setup   # idempotent: git hooks, go mod download, .env from .env.example, pg container + babylon_test DB, then check
+make check   # read-only: go/node/container versions, go mod verify, pg running + reachable, .env keys, hooks, go vet
+make help    # also: pg, pg-stop, run, test, test-db, test-sim, vet
+```
+
+Then fill `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` in `.env` and `go run .`. The Bash sandbox may block `container` and `:5432`, so run these with `!`.
+
 ## Commands
 
 ```
@@ -39,6 +49,8 @@ GITHUB_CLIENT_ID=...  GITHUB_CLIENT_SECRET=...                # GitHub OAuth app
 BASE_URL=http://localhost:8080                                # callback is BASE_URL/auth/callback
 ADMIN_GITHUB_IDS=12345,67890   # optional; GitHub numeric user IDs that become admins (find yours at https://api.github.com/users/<login>)
 ```
+
+All config loads in `config.go` (`readConfig`). Besides the real environment, the app reads a dotenv-format file: `.env` in the working directory by default, or the path in `CONFIG_FILE` (a missing default file is fine, a missing explicit `CONFIG_FILE` or a malformed file fails boot; `.env` is gitignored and dockerignored). The real environment wins over the file, even a variable set to empty. Format: `KEY=VALUE`, `#` comments, optional `export `, `"..."`/`'...'` quoting, no expansion; quote values containing ` #`.
 
 Local Postgres: `container run -d --name pg -e POSTGRES_PASSWORD=pg -e POSTGRES_DB=babylon -p 5432:5432 postgres:17`. Postgres integration tests run only when `TEST_DATABASE_URL` is set; otherwise they skip. Create a dedicated test DB once with `container exec pg createdb -U postgres babylon_test`, then run `TEST_DATABASE_URL=postgres://postgres:pg@localhost:5432/babylon_test go test ./internal/adapters/postgres/ -v`. The tests TRUNCATE tables, so they refuse (fail) any database whose name does not end in `_test`.
 

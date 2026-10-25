@@ -1,8 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -16,7 +19,31 @@ type config struct {
 	AdminGitHubIDs     []int64
 }
 
-// loadConfig reads the environment through getenv (os.Getenv in main) so tests
+// defaultConfigFile is read when CONFIG_FILE is unset; it may be absent.
+const defaultConfigFile = ".env"
+
+// readConfig is the boot entry point. Values come from the real environment
+// (lookup, os.LookupEnv in main) first, then from a dotenv-format file whose
+// path is CONFIG_FILE, default ".env". A missing default file is fine
+// (production has none); a missing explicit CONFIG_FILE is an error.
+func readConfig(lookup func(string) (string, bool)) (config, error) {
+	path, explicit := lookup("CONFIG_FILE")
+	if path = strings.TrimSpace(path); path == "" {
+		path, explicit = defaultConfigFile, false
+	}
+	if explicit {
+		if _, err := os.Stat(path); err != nil {
+			return config{}, fmt.Errorf("CONFIG_FILE: %w", err)
+		}
+	}
+	file, err := loadDotEnv(path)
+	if err != nil {
+		return config{}, err
+	}
+	return loadConfig(layeredGetenv(lookup, file))
+}
+
+// loadConfig reads settings through getenv (layeredGetenv in main) so tests
 // can supply their own. Every value is whitespace-trimmed. Every missing
 // required variable is named in one error; malformed values fail at boot.
 func loadConfig(rawGetenv func(string) string) (config, error) {
@@ -95,4 +122,75 @@ func (c config) secureCookies() bool {
 	}
 	h := u.Hostname()
 	return h != "localhost" && h != "127.0.0.1"
+}
+
+// loadDotEnv reads KEY=VALUE pairs from a dotenv file. A missing file is not an
+// error (production has none); an unreadable or malformed one is, so a typo
+// fails at boot instead of silently dropping a setting.
+//
+// Supported: blank lines, "# comment" lines, an optional "export " prefix,
+// whitespace around the key and value, "..." and '...' quoted values (no
+// escapes), and a trailing " # comment" after an unquoted value. There is no
+// variable expansion. Quote values that contain " #".
+func loadDotEnv(path string) (map[string]string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	env := map[string]string{}
+	for i, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+
+		key, raw, ok := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" || strings.ContainsAny(key, " \t") {
+			return nil, fmt.Errorf("%s: line %d: want KEY=VALUE", path, i+1)
+		}
+		val, err := dotEnvValue(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, fmt.Errorf("%s: line %d: %w", path, i+1, err)
+		}
+		env[key] = val
+	}
+	return env, nil
+}
+
+// dotEnvValue unquotes a value, or strips a trailing " #" comment from an
+// unquoted one.
+func dotEnvValue(raw string) (string, error) {
+	if raw != "" && (raw[0] == '"' || raw[0] == '\'') {
+		end := strings.IndexByte(raw[1:], raw[0])
+		if end < 0 {
+			return "", errors.New("unterminated quote")
+		}
+		if rest := strings.TrimSpace(raw[end+2:]); rest != "" && !strings.HasPrefix(rest, "#") {
+			return "", errors.New("unexpected text after closing quote")
+		}
+		return raw[1 : end+1], nil
+	}
+	if i := strings.Index(raw, " #"); i >= 0 {
+		raw = raw[:i]
+	}
+	return strings.TrimSpace(raw), nil
+}
+
+// layeredGetenv returns a getenv that prefers the real environment (lookup,
+// normally os.LookupEnv) and falls back to the dotenv file. A variable that is
+// set but empty in the real environment still wins, so it can blank out a file
+// value.
+func layeredGetenv(lookup func(string) (string, bool), file map[string]string) func(string) string {
+	return func(key string) string {
+		if v, ok := lookup(key); ok {
+			return v
+		}
+		return file[key]
+	}
 }

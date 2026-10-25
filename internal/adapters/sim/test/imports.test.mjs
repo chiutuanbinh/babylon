@@ -31,6 +31,9 @@ test('the front end has the files this plan expects', () => {
     'engine/sim-player.js',
     'engine/scene.js',
     'concepts/algorithms/sorting/bars-renderer.js',
+    'concepts/web/flow-steps.js',
+    'concepts/web/oauth2-pkce.js',
+    'concepts/web/flow-renderer.js',
   ]) {
     assert.ok(rel.includes(want), `missing ${want}`);
   }

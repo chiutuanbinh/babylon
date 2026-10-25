@@ -11,6 +11,16 @@ const RATES = [
 ];
 const DEFAULT_RATE = 6;
 
+// Flows are read, not watched: one step takes seconds, not a fraction of one.
+const FLOW_RATES = [
+  ['Slow', 0.25],
+  ['Normal', 0.5],
+  ['Fast', 1],
+  ['Turbo', 3],
+];
+const DEFAULT_FLOW_RATE = 0.5;
+const MAX_FRAME = 0.25; // seconds; a backgrounded tab must not fast-forward the flow
+
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const STYLE = `
@@ -85,6 +95,16 @@ class SimPlayer extends HTMLElement {
     if (!loaded.ok) {
       if (loaded.err) console.warn('<sim-player>', loaded.err);
       this.#show(loaded.reason, true);
+      return;
+    }
+
+    if (loaded.view === 'svg') {
+      try {
+        this.#dispose = this.#mountFlow(loaded);
+      } catch (err) {
+        console.warn('<sim-player>: diagram failed to start', err);
+        this.#show('The diagram could not start in this browser.', true);
+      }
       return;
     }
 
@@ -214,6 +234,92 @@ class SimPlayer extends HTMLElement {
 
     return () => {
       kit.dispose();
+      renderer.dispose();
+      root.replaceChildren();
+    };
+  }
+
+  // #mountFlow is the svg counterpart of #mount: no WebGL scene, no size or
+  // shuffle (a flow is fixed), and a plain animation-frame loop. It returns a disposer.
+  #mountFlow({ entry, trace, createRenderer, describe, actors }) {
+    const root = this.#root;
+    const style = document.createElement('style');
+    style.textContent = STYLE;
+    const view = document.createElement('div');
+    view.innerHTML = `
+      <figure>
+        <div data-ref="stage"></div>
+        <div class="bar" role="group" aria-label="Playback controls">
+          <button type="button" data-act="start" aria-label="Back to start">⏮</button>
+          <button type="button" data-act="back" aria-label="Step back">◀</button>
+          <button type="button" data-act="play">Play</button>
+          <button type="button" data-act="forward" aria-label="Step forward">▶</button>
+          <label>Speed <select data-ref="speed"></select></label>
+          <output data-ref="status" aria-live="polite"></output>
+        </div>
+      </figure>`;
+    root.replaceChildren(style, view);
+
+    const stage = view.querySelector('[data-ref="stage"]');
+    const playButton = view.querySelector('[data-act="play"]');
+    const status = view.querySelector('[data-ref="status"]');
+    const speed = view.querySelector('[data-ref="speed"]');
+    for (const [label, rate] of FLOW_RATES) {
+      const option = document.createElement('option');
+      option.value = String(rate);
+      option.textContent = label;
+      option.selected = rate === DEFAULT_FLOW_RATE;
+      speed.append(option);
+    }
+
+    const text = describe ?? describeStep;
+    const steps = trace({ actors });
+    const renderer = createRenderer();
+    renderer.init(stage, { actors, length: steps.length });
+
+    const sync = () => {
+      const last = player.lastStep;
+      status.textContent =
+        `${entry.title}: step ${player.cursor} / ${player.length}` + (last ? ` – ${text(last)}` : '');
+      playButton.textContent = player.playing ? 'Pause' : 'Play';
+    };
+    const player = new Player(steps, renderer, { onChange: sync });
+    player.setRate(DEFAULT_FLOW_RATE);
+    sync();
+
+    view.addEventListener('click', (event) => {
+      const act = event.target.closest?.('[data-act]')?.dataset.act;
+      switch (act) {
+        case 'start':
+          player.pause();
+          player.seek(0);
+          break;
+        case 'back':
+          player.pause();
+          player.stepBack();
+          break;
+        case 'forward':
+          player.pause();
+          player.stepForward();
+          break;
+        case 'play':
+          if (player.playing) player.pause();
+          else player.play();
+          break;
+      }
+    });
+    speed.addEventListener('change', () => player.setRate(Number(speed.value)));
+
+    // Playback never starts by itself, which also satisfies prefers-reduced-motion.
+    let last = performance.now();
+    let frame = requestAnimationFrame(function loop(now) {
+      player.tick(Math.min((now - last) / 1000, MAX_FRAME));
+      last = now;
+      frame = requestAnimationFrame(loop);
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
       renderer.dispose();
       root.replaceChildren();
     };

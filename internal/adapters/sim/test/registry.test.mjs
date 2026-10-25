@@ -50,3 +50,25 @@ test('groupByTopic keeps topic order and nests concepts', () => {
   assert.equal(groups.flatMap((g) => g.concepts).length, concepts.length);
   assert.ok(groups[0].concepts.every((c) => c.topic === groups[0].id));
 });
+
+test('view is 3d or svg when set', () => {
+  for (const c of concepts) {
+    if (c.view !== undefined) assert.ok(['3d', 'svg'].includes(c.view), `${c.id}: view ${c.view}`);
+  }
+});
+
+test('the web topic lists OAuth2 as an available svg concept and three planned ones', () => {
+  assert.ok(topics.some((t) => t.id === 'web'));
+  const web = concepts.filter((c) => c.topic === 'web');
+  const oauth = web.find((c) => c.id === 'oauth2-pkce');
+  assert.equal(oauth.status, 'available');
+  assert.equal(oauth.view, 'svg');
+  assert.deepEqual(web.filter((c) => c.status === 'planned').map((c) => c.id).sort(), ['cors', 'jwt', 'sso']);
+});
+
+test('svg concepts export actors from their trace module', async () => {
+  for (const c of concepts.filter((x) => x.view === 'svg')) {
+    const mod = await import(staticFile(c.trace));
+    assert.ok(Array.isArray(mod.actors) && mod.actors.length >= 2, `${c.id}: needs actors`);
+  }
+});

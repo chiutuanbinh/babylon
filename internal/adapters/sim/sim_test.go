@@ -27,6 +27,9 @@ func TestRoutes(t *testing.T) {
 	}{
 		{"GET", "/sim", 200, "text/html"},
 		{"GET", "/sim/algorithms/quick-sort", 200, "text/html"},
+		{"GET", "/sim/web/oauth2-pkce", 200, "text/html"},
+		{"GET", "/static/sim/concepts/web/oauth2-pkce.js", 200, "javascript"},
+		{"GET", "/static/sim/concepts/web/flow-renderer.js", 200, "javascript"},
 		{"GET", "/static/sim/vendor/htmx/htmx.min.js", 200, "javascript"},
 		{"GET", "/static/sim/vendor/three/three.module.js", 200, "javascript"},
 		{"GET", "/static/sim/vendor/three/three.core.js", 200, "javascript"},

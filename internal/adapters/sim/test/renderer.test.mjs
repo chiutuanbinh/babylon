@@ -30,7 +30,7 @@ const heights = (scene) => scene.children[0].children.map((m) => m.scale.y);
 const colors = (scene) => scene.children[0].children.map((m) => m.material.color.getHex());
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 
-for (const c of concepts.filter((x) => x.status === 'available')) {
+for (const c of concepts.filter((x) => x.status === 'available' && (x.view ?? '3d') === '3d')) {
   for (const input of INPUTS) {
     test(`${c.id} renderer on [${input}] sorts, rewinds and disposes`, async () => {
       const { trace } = await import(c.trace);

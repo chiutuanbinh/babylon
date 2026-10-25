@@ -1,11 +1,16 @@
 // The single source of truth for what the simulator offers. The /sim catalog,
 // <sim-player> and the tests all read this file. To add a concept: add an
 // entry, write its modules, and flip `status` to 'available'.
+//
+// `view` picks how a concept is shown: '3d' (the default; a three.js scene) or
+// 'svg' (an SVG diagram, no WebGL). An 'svg' concept's trace module must also
+// export `actors`.
 
 export const topics = [
   { id: 'algorithms', title: 'Algorithms' },
   { id: 'data-structures', title: 'Data structures' },
   { id: 'concurrency', title: 'Concurrency' },
+  { id: 'web', title: 'Web' },
   { id: 'security', title: 'Security' },
   { id: 'operations', title: 'Operations' },
   { id: 'infrastructure', title: 'Infrastructure' },
@@ -21,6 +26,8 @@ const sorting = (id, title, file) => ({
   trace: `${SORTING}/${file}.js`,
   renderer: `${SORTING}/bars-renderer.js`,
 });
+
+const WEB = '/static/sim/concepts/web';
 
 const planned = (topic, id, title) => ({ id, topic, title, status: 'planned' });
 
@@ -38,6 +45,18 @@ export const concepts = [
   planned('data-structures', 'heap', 'Heap'),
   planned('concurrency', 'race-condition', 'Race condition'),
   planned('concurrency', 'deadlock', 'Deadlock'),
+  {
+    id: 'oauth2-pkce',
+    topic: 'web',
+    title: 'OAuth2 authorization code + PKCE',
+    status: 'available',
+    view: 'svg',
+    trace: `${WEB}/oauth2-pkce.js`,
+    renderer: `${WEB}/flow-renderer.js`,
+  },
+  planned('web', 'jwt', 'JWT'),
+  planned('web', 'cors', 'CORS'),
+  planned('web', 'sso', 'Single sign-on (SSO)'),
   planned('security', 'password-hashing', 'Password hashing'),
   planned('security', 'sql-injection', 'SQL injection'),
   planned('operations', 'circuit-breaker', 'Circuit breaker'),

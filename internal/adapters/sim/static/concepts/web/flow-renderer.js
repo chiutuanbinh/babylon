@@ -1,7 +1,7 @@
 import { createFlowState, applyFlow, reverseFlow } from './flow-steps.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const WIDTH = 800; // viewBox width; the svg scales to its container
+const WIDTH = 560; // viewBox width; the svg scales to its container
 const HEAD_Y = 14; // top of the actor boxes
 const HEAD = { w: 130, h: 30 };
 const TOP = 90; // y of the first row
@@ -11,7 +11,7 @@ const CSS = `
 .flow { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
 .flow svg { flex: 2 1 28rem; min-width: 0; height: auto; color: CanvasText; border: 1px solid GrayText; border-radius: 6px; }
 .flow aside { flex: 1 1 14rem; min-width: 0; }
-.flow text { fill: currentColor; font: 12px system-ui, sans-serif; }
+.flow text { fill: currentColor; font: 12px system-ui, sans-serif; paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
 .flow .actor rect { fill: none; stroke: currentColor; }
 .flow .life { stroke: GrayText; stroke-dasharray: 4 4; }
 .flow .arrow { stroke: currentColor; stroke-width: 1.5; }
@@ -114,7 +114,7 @@ export function createRenderer() {
 
       const diagram = svg('svg', { viewBox: `0 0 ${WIDTH} ${height}`, role: 'img', 'aria-label': 'Sequence diagram' });
       const defs = svg('defs');
-      const marker = svg('marker', { id: 'arrowhead', markerWidth: 10, markerHeight: 7, refX: 9, refY: 3.5, orient: 'auto' });
+      const marker = svg('marker', { id: 'arrowhead', markerUnits: 'userSpaceOnUse', markerWidth: 10, markerHeight: 7, refX: 9, refY: 3.5, orient: 'auto' });
       marker.append(svg('path', { d: 'M0,0 L10,3.5 L0,7 z' }));
       defs.append(marker);
       diagram.append(defs);

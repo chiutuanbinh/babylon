@@ -313,7 +313,9 @@ class SimPlayer extends HTMLElement {
     // Playback never starts by itself, which also satisfies prefers-reduced-motion.
     let last = performance.now();
     let frame = requestAnimationFrame(function loop(now) {
-      player.tick(Math.min((now - last) / 1000, MAX_FRAME));
+      const dt = Math.min((now - last) / 1000, MAX_FRAME);
+      player.tick(dt);
+      renderer.update(dt);
       last = now;
       frame = requestAnimationFrame(loop);
     });

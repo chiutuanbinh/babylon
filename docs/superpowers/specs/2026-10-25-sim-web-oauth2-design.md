@@ -18,8 +18,9 @@ spec/plan later, reusing the view built now.
 
 - No live interaction (tampering with a token, editing parameters) in v1.
 - No real crypto, network or server logic. All values are fixed, illustrative
-  strings; the SHA-256 relationship between verifier and challenge is stated,
-  not computed.
+  strings; the app never computes SHA-256 (the verifier/challenge relationship
+  is stated), but a test does, to prove the example pair (RFC 7636 appendix B)
+  is consistent.
 - Other grant types (client credentials, device code), OIDC, refresh tokens.
 - No change to the 3D path: sorting concepts, `scene.js` and `bars-renderer.js`
   are untouched.
@@ -30,6 +31,8 @@ spec/plan later, reusing the view built now.
   `'svg'`); no second element, no engine-wide stage abstraction.
 - SVG/DOM, not three.js: text-heavy (URLs, params, tokens), selectable,
   accessible, CSP-safe, and testable without WebGL.
+- Notes render as a lifeline marker with the full text in `<title>` and the side
+  panel. Flow playback rates are 0.25/0.5/1/3 steps per second, default 0.5.
 - A trace is data: `trace(input)` returns `steps[]`; the flow trace ignores
   `input` (the flow is fixed).
 
@@ -59,12 +62,14 @@ static/concepts/web/
   - `state {actor, key, value, prev}`: actor holds `key=value` (e.g. the app
     stores `code_verifier`); `prev` makes it reversible; `null` clears.
   - `describe(step)` gives the one-line status text.
-- **Renderer (svg)**: same shape as 3D, `{init(stage, input), apply(step),
-  reverse(step, prev), update(dt), dispose()}`, where `stage` is a `<div>`
-  instead of a three.js scene. Built with `createElementNS`; no `innerHTML` of
+- **Renderer (svg)**: `{init(stage, {actors, length}), apply(step),
+  reverse(step, prev), update(dt), dispose()}`, where `stage` is a `<div>` and
+  `length` is the step count (used to size the diagram). Built with `createElementNS`; no `innerHTML` of
   step text (all text via `textContent`).
-- **Trace module** exports `trace` and optional `describe`; `sim-player` uses
-  `describe ?? describeStep` for the status line. `loadConcept` returns it.
+- **Trace module** exports `trace`, `actors` (required for svg views; string
+  ids that double as display labels) and optional `describe`. `loadConcept`
+  returns `view`, `describe` and `actors`; `sim-player` uses
+  `describe ?? describeStep` for the status line.
 
 ### OAuth2 + PKCE trace
 
@@ -119,7 +124,8 @@ and the frame loop is a `requestAnimationFrame` loop owned by the svg branch
   `web` topic listed.
 - **load.js**: passes `view` and `describe`; rejects unknown `view`.
 - **Flow renderer**: node has no DOM, so tests use a minimal fake DOM stub for
-  `apply/reverse` bookkeeping (arrow count, side panel content). Visual
+  `apply/reverse` bookkeeping (arrow count, side panel content); flow renderer tests use
+  `test/fake-dom.mjs`. Visual
   correctness is checked in a browser (Playwright MCP or the user).
 - **Not testable here**: real layout and animation.
 - Go side needs no change (static assets are already served generically);
